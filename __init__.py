@@ -3,6 +3,9 @@ from aiohttp import web
 from .scanner import ModelScanner
 from .matcher import ModelMatcher
 
+__version__ = "1.0.0"
+__author__ = "LK"
+
 # 初始化核心组件
 scanner = ModelScanner()
 matcher = ModelMatcher(scanner)
