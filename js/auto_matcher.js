@@ -212,7 +212,7 @@ async function showSettingsDialog() {
     content.style.fontFamily = "sans-serif";
 
     const h3 = document.createElement("h3");
-    h3.innerText = "⚙️ 插件设置";
+    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">v1.1.1</span>`;
     h3.style.color = "#eee";
     h3.style.marginTop = "0";
     content.appendChild(h3);

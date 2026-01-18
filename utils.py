@@ -233,11 +233,76 @@ class AdvancedTokenizer:
         return unique_terms
 
     @staticmethod
+    def detect_base_model(filename):
+        """
+        语义识别: 检测基座模型架构
+        返回: 'sdxl', 'sd15', 'sd21', 'flux', 'pony', 'qwen', 'sd3', 'hunyuan', 'auraflow', 'kwai', 'unknown'
+        """
+        lower = filename.lower()
+        
+        # 1. Pony (往往基于 SDXL 但生态独立，需优先识别)
+        if "pony" in lower:
+            return "pony"
+            
+        # 2. Flux
+        # 匹配 flux, flux1, fl_ (common prefix), awportraitfl, f.1 (e.g. F.1 奶油风)
+        if "flux" in lower or re.search(r'\bfl\d?[\-_]', lower) or "awportraitfl" in lower or "f.1" in lower:
+            return "flux"
+        
+        # 3. SD3 (SD3.5, SD3)
+        if re.search(r'sd3[\._]?5|sd3', lower):
+            return "sd3"
+
+        # 4. SDXL
+        # 匹配 xl, sdxl, juggernaut_xl, dynavision_xl, supir
+        # Expanded regex to catch suffix 'xl' like 'juggernautxl'
+        # (?:[\W_]|^)xl -> start of word xl
+        # xl(?:[\W_]|$) -> end of word xl
+        # AND capture 'ends with xl' logic via .*xl(\.safetensors)?
+        if re.search(r'(?:[\W_]|^)xl(?:[\W_]|$)|sdxl|base_1\.0|refiner|supir|juggernaut', lower):
+            return "sdxl"
+        # Case: juggernautXL (no separator). Explicit check or heuristic?
+        # If 'xl' is at the end of the name part (before ext)
+        base, _ = os.path.splitext(lower)
+        if base.endswith("xl") and not base.endswith("pixel"):
+            return "sdxl"
+            
+        # 5. SD1.5 / SD2.1
+        if re.search(r'v1[\-._]?5|sd15|1\.5|dreamshaper|realistic_vision', lower):
+            return "sd15"
+        if re.search(r'v2[\-._]?1|sd21|2\.1', lower):
+            return "sd21"
+            
+        # 6. New Gen (Hunyuan, AuraFlow, Kwai/LTX)
+        if "hunyuan" in lower: return "hunyuan"
+        if "aura" in lower and "flow" in lower: return "auraflow"
+        if "ltx" in lower or "kolors" in lower: return "kwai"
+            
+        # 7. LLM/VLM based
+        if "qwen" in lower: return "qwen"
+        if "llama" in lower: return "llama"
+        
+        # 8. Default heuristics
+        return "unknown"
+
+    @staticmethod
     def calculate_similarity(name_a, name_b):
         """
-        计算综合相似度 (Jaccard + Sequence)
+        计算综合相似度 (Jaccard + Sequence + Semantic Check)
         """
         if not name_a or not name_b: return 0.0
+        
+        # === 0. Semantic Architecture Check (The "Brain" Filter) ===
+        base_a = AdvancedTokenizer.detect_base_model(name_a)
+        base_b = AdvancedTokenizer.detect_base_model(name_b)
+        
+        # 如果两者都被识别出架构，且架构不同 -> 0分 (直接不兼容)
+        # e.g. "Juggernaut_XL" vs "Juggernaut_v7" (SD1.5) -> mismatch
+        # exception: 'pony' often runs on 'sdxl' nodes, but user likely wants pony-to-pony match.
+        # Strict mode: mismatch = 0
+        if base_a != "unknown" and base_b != "unknown":
+            if base_a != base_b:
+                return 0.0
         
         # 1. Token Similarity (Jaccard)
         # tokenize now returns list, convert to set
