@@ -89,6 +89,13 @@ class ModelMatcher:
             
             # Priority 3: Inverted Index Fuzzy Match (Optimization)
             # This handles small typos or differences
+            # Prepare Target Format for Strict Checking
+            target_fmt = AdvancedTokenizer.get_model_format(current_val)
+            if target_fmt == "other":
+                # Try to infer from usage or assume checkpoint if unclear, but safer to match 'other' loosely
+                if "gguf" in target_base.lower(): target_fmt = "gguf"
+                elif ".safetensors" in current_val or ".ckpt" in current_val: target_fmt = "checkpoint"
+
             if not best_match:
                 target_tokens = AdvancedTokenizer.tokenize(target_base)
                 candidate_indices = set()
@@ -102,6 +109,13 @@ class ModelMatcher:
                 if candidate_indices:
                     for idx in candidate_indices:
                         candidate_info = self.model_list[idx]
+                        
+                        # [Strict Check] Format Compatibility
+                        cand_fmt = AdvancedTokenizer.get_model_format(candidate_info["filename"])
+                        if target_fmt != "other" and cand_fmt != "other":
+                            if target_fmt != cand_fmt:
+                                continue
+
                         candidate_base = self._get_basename(candidate_info["filename"])
                         
                         score = AdvancedTokenizer.calculate_similarity(target_base, candidate_base)
@@ -119,13 +133,8 @@ class ModelMatcher:
             if not best_match:
                 # 提取核心 Token (去除量化、格式后缀)
                 target_core = AdvancedTokenizer.get_core_tokens(target_base)
-                target_fmt = AdvancedTokenizer.get_model_format(current_val) # current_val logic
+                # target_fmt ALREADY DEFINED above
                 
-                # 如果 current_val 没有后缀(例如ComfyUI传递的名字不带后缀?), 尝试从 base 推断
-                if target_fmt == "other":
-                    target_fmt = AdvancedTokenizer.get_model_format(target_base + ".safetensors") # Default assumption?
-                    if "gguf" in target_base.lower(): target_fmt = "gguf"
-
                 if target_core: # 只有存在核心词时才尝试
                     best_variant_score = 0.0
                     variant_candidate = None
