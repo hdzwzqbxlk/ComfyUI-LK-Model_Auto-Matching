@@ -2,6 +2,7 @@ import server
 from aiohttp import web
 from .scanner import ModelScanner
 from .matcher import ModelMatcher
+from .searcher import ModelSearcher
 
 __version__ = "1.0.0"
 __author__ = "LK"
@@ -9,44 +10,110 @@ __author__ = "LK"
 # 初始化核心组件
 scanner = ModelScanner()
 matcher = ModelMatcher(scanner)
+searcher = ModelSearcher()
 
 # 注册 API 路由
 @server.PromptServer.instance.routes.post("/auto-matcher/match")
 async def match_models(request):
     try:
         data = await request.json()
-        # 预期输入: {"items": [{"id": 1, "type": "checkpoints", "current": "foo.ckpt"}, ...]}
         items = data.get("items", [])
-        results = []
         
-        # 刷新缓存 (优化点：可以加个时间限制，别每次都刷)
-        matcher.refresh_models()
-
-        for item in items:
-            target_name = item.get("current")
-            model_type = item.get("type") # e.g., "checkpoints"
-            
-            # ComfyUI 的 type 经常有点乱，这里做一个映射
-            # 例如 CheckpointLoaderSimple 的 widget 名字通常叫 ckpt_name，但对应的 folder path key 是 checkpoints
-            # 前端负责传正确的 folder type
-            
-            match_result = matcher.match(target_name, model_type)
-            if match_result:
-                results.append({
-                    "id": item.get("id"),
-                    "new_value": match_result,
-                    "original": target_name
-                })
+        # 调用新版 matcher，传入列表
+        matches = matcher.match(items)
+        
+        # 格式化返回结果
+        results = []
+        for m in matches:
+            results.append({
+                "id": m["id"],
+                "node_type": m["node_type"],
+                "widget_name": m["widget_name"], 
+                "original": m["original_value"], 
+                "new_value": m["matched_value"]
+            })
         
         return web.json_response({"matches": results})
     except Exception as e:
         print(f"[AutoModelMatcher] API Error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-@server.PromptServer.instance.routes.post("/auto-matcher/trigger-scan")
-async def trigger_scan(request):
-    scanner.scan_all_models()
-    return web.json_response({"status": "scanned"})
+@server.PromptServer.instance.routes.post("/auto-matcher/search")
+async def search_models(request):
+    try:
+        data = await request.json()
+        # 预期输入: {"items": [{"current": "v1.5.ckpt"}, ...]} 只需要搜索未匹配的
+        items = data.get("items", [])
+        
+        # 准备并发任务
+        tasks = []
+        original_filenames = []
+        
+        import asyncio
+        for item in items:
+            filename = item.get("current")
+            if filename and "." in filename:
+                tasks.append(searcher.search(filename))
+                original_filenames.append(filename)
+        
+        if not tasks:
+            return web.json_response({"downloads": []})
+            
+        # 并发执行所有搜索
+        search_results = await asyncio.gather(*tasks)
+        
+        results = []
+        for filename, result in zip(original_filenames, search_results):
+            if result:
+                results.append({
+                    "original": filename,
+                    "result": result
+                })
+        
+        return web.json_response({"downloads": results})
+    except Exception as e:
+        print(f"[AutoModelMatcher] Search API Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.post("/auto-matcher/refresh-index")
+async def refresh_index(request):
+    try:
+        count = scanner.scan_incremental()
+        return web.json_response({"status": "ok", "count": count})
+    except Exception as e:
+        print(f"[AutoModelMatcher] Index Refresh Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.post("/auto-matcher/save-config")
+async def save_config(request):
+    try:
+        data = await request.json()
+        searcher.save_config(data)
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        print(f"[AutoModelMatcher] Save Config Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.post("/auto-matcher/validate-config")
+async def validate_config(request):
+    try:
+        data = await request.json()
+        api_key = data.get("civitai_api_key", "")
+        is_valid, msg = await searcher.validate_api_key(api_key)
+        return web.json_response({"valid": is_valid, "message": msg})
+    except Exception as e:
+        print(f"[AutoModelMatcher] Validate Config Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.get("/auto-matcher/get-config")
+async def get_config(request):
+    try:
+        config = searcher.get_config()
+        # Only return safe fields to frontend if needed, but for local tool it's fine
+        return web.json_response(config)
+    except Exception as e:
+        print(f"[AutoModelMatcher] Get Config Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
 # 插件目录配置
 WEB_DIRECTORY = "./js"

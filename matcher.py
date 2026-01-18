@@ -4,68 +4,127 @@ import os
 class ModelMatcher:
     def __init__(self, scanner):
         self.scanner = scanner
-        # 简单的内存缓存
-        self._cached_models = None
-
-    def refresh_models(self):
-        self._cached_models = self.scanner.scan_all_models()
 
     def _normalize_name(self, name):
+        """标准化模型名称，移除扩展名并转小写"""
+        base, _ = os.path.splitext(name)
+        return base.lower().strip()
+
+    def _get_basename(self, path):
+        """提取纯文件名 (不含目录，不含扩展名)"""
+        # handle both / and \ just in case
+        name = os.path.basename(path.replace("\\", "/"))
+        base, _ = os.path.splitext(name)
+        return base.lower().strip()
+
+    def _tokenize(self, text):
+        """将文本拆分为 token 集合 (v1.5_pruned -> {v1, 5, pruned})"""
+        # 替换常见分隔符为为空格
+        for char in ["_", "-", ".", " "]:
+            text = text.replace(char, " ")
+        # 拆分并过滤空串
+        tokens = [t.lower() for t in text.split(" ") if t.strip()]
+        return set(tokens)
+
+    def _token_similarity(self, set_a, set_b):
+        """计算两个 token 集合的相似度 (Jaccard Index)"""
+        if not set_a or not set_b:
+            return 0.0
+        intersection = len(set_a.intersection(set_b))
+        union = len(set_a.union(set_b))
+        return intersection / union
+
+    def match(self, missing_items):
         """
-        标准化文件名：转小写，统一路径分隔符，可以用于模糊对比
+        匹配缺失的模型
         """
-        return name.lower().replace("\\", "/")
+        matches = []
+        
+        # 1. Prepare Index
+        index_models = self.scanner.get_all_models()
+        
+        full_name_map = {}
+        basename_map = {}
+        
+        # Pre-calculate tokens for all local models to speed up fuzzy search
+        # List of tuples: (model_info, token_set)
+        token_index = []
 
-    def match(self, target_name, model_type, threshold=0.7):
-        """
-        在指定模型类型中查找匹配项
-        :param target_name: 工作流中丢失的模型名 (e.g. "SD1.5/v1-5-pruned.ckpt")
-        :param model_type: 模型类型 (e.g. "checkpoints")
-        :param threshold: 模糊匹配阈值 (0.0 - 1.0)
-        :return: 最佳匹配的文件名 (e.g. "v1-5-pruned.ckpt") 或 None
-        """
-        if not self._cached_models:
-            self.refresh_models()
+        for info in index_models:
+            filename = info["filename"]
+            
+            # 1. Full Normalized
+            norm = self._normalize_name(filename)
+            full_name_map[norm] = info
+            full_name_map[filename.lower()] = info
+            
+            # 2. Basename
+            base = self._get_basename(filename)
+            if base not in basename_map:
+                basename_map[base] = info
+            
+            # 3. Token Set (Only basename tokens mostly relevant?)
+            # 使用 basename 的 token 会更精准，避免目录干扰
+            token_set = self._tokenize(base)
+            token_index.append((info, token_set))
 
-        available_files = self._cached_models.get(model_type, [])
-        if not available_files:
-            return None
+        # Get candidates for legacy fuzzy match
+        available_names = list(full_name_map.keys())
 
-        target_base = os.path.basename(target_name)
-        target_norm = self._normalize_name(target_name)
-        target_base_norm = self._normalize_name(target_base)
+        for item in missing_items:
+            current_val = item.get("current")
+            if not current_val:
+                continue
 
-        # Strategy 1: Exact Match (文件名完全一致，忽略原始路径)
-        # 很多时候别人工作流里的路径结构跟本地不同，但文件名是一样的
-        for f in available_files:
-            f_base = os.path.basename(f)
-            if self._normalize_name(f) == target_norm: 
-                # 路径+文件名完全一致（极少见的情况，通常不需要修）
-                return f
-            if self._normalize_name(f_base) == target_base_norm:
-                # 文件名一致，路径不同 -> High Confidence Match
-                return f
-
-        # Strategy 2: Fuzzy Match (文件名相似)
-        if threshold > 0:
-            # 使用 difflib 比较文件名部分的相似度 (忽略扩展名，以免 .safetensors 占权重过大)
+            target_norm = self._normalize_name(current_val)
+            target_base = self._get_basename(current_val)
+            
             best_match = None
-            best_ratio = 0.0
             
-            target_stem = os.path.splitext(target_base_norm)[0]
+            # Priority 1: Exact Full Path Match
+            if target_norm in full_name_map:
+                best_match = full_name_map[target_norm]
+            elif current_val.lower() in full_name_map:
+                best_match = full_name_map[current_val.lower()]
             
-            for f in available_files:
-                f_base = os.path.basename(f)
-                f_base_norm = self._normalize_name(f_base)
-                f_stem = os.path.splitext(f_base_norm)[0]
-                
-                ratio = difflib.SequenceMatcher(None, target_stem, f_stem).ratio()
-                
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_match = f
+            # Priority 2: Exact Basename Match
+            elif target_base in basename_map:
+                best_match = basename_map[target_base]
             
-            if best_ratio >= threshold:
-                return best_match
+            # Priority 3: Smart Token Match (NEW)
+            # Solves "v1.5_pruned" vs "v1-5-pruned"
+            if not best_match:
+                target_tokens = self._tokenize(target_base)
+                best_score = 0.0
+                best_candidate = None
                 
-        return None
+                for info, candidate_tokens in token_index:
+                    score = self._token_similarity(target_tokens, candidate_tokens)
+                    if score > best_score:
+                        best_score = score
+                        best_candidate = info
+                
+                # 设置一个较高的阈值，避免错误匹配
+                # 0.6 意味着大约 60% 的关键词重合
+                if best_score >= 0.6:
+                    best_match = best_candidate
+
+            # Priority 4: Legacy Fuzzy Match (Full Path)
+            # (Only use if token match failed or score too low)
+            if not best_match:
+                similars = difflib.get_close_matches(target_norm, available_names, n=1, cutoff=0.85)
+                if similars:
+                    best_match = full_name_map[similars[0]]
+
+            if best_match:
+                if best_match["filename"] != current_val:
+                    matches.append({
+                        "id": item["id"],
+                        "node_type": item["node_type"],
+                        "widget_name": item["widget_name"],
+                        "original_value": current_val,
+                        "matched_value": best_match["filename"],
+                        "path": best_match["path"] 
+                    })
+
+        return matches
