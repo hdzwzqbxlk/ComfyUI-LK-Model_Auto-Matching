@@ -87,6 +87,52 @@ class TestPhase3(unittest.TestCase):
         print(f"  Input: Qwen...Q5...gguf -> Matched: {matched_gguf}")
         self.assertEqual(matched_gguf, "Qwen_Image_Edit_2511_Q4_K_M.gguf")
 
+    def test_critical_terms_mismatch(self):
+        """Test that CRITICAL_TERMS prevent matching different model types"""
+        print("\n[Test] Critical Terms Mismatch (Upscale vs Base)")
+        
+        scanner = MagicMock()
+        scanner.get_all_models.return_value = [
+            # Base Model
+            {"filename": "qwen_image_edit_2511_bf16.safetensors", "path": "/path/base", "type": "checkpoints"},
+            # Upscale Model
+            {"filename": "qwen_image_edit_2511_upscale.safetensors", "path": "/path/upscale", "type": "checkpoints"},
+        ]
+        
+        matcher = ModelMatcher(scanner)
+        matcher._build_index()
+        
+        # Scenario: Workflow wants 'upscale', Local has 'bf16' (Base)
+        # Should NOT match.
+        items = [{"id": 1, "current": "qwen_image_edit_2511_upscale.safetensors", "node_type": "CheckpointLoader", "widget_name": "ckpt"}]
+        result = matcher.match(items)
+        
+        # It should ideally match NOTHING if only base is available, 
+        # OR match the upscale exact if available (which it is in mock).
+        # But crucially, 'upscale' should NOT match 'bf16'.
+        
+        if result:
+            matched = result[0]["matched_value"]
+            print(f"  Input: Upscale -> Matched: {matched}")
+            # Ensure it didn't match the bf16 one
+            self.assertNotEqual(matched, "qwen_image_edit_2511_bf16.safetensors")
+            # It SHOULD match the exact upscale one if present
+            self.assertEqual(matched, "qwen_image_edit_2511_upscale.safetensors")
+            
+        # Scenario: Workflow wants 'bf16', Local has ONLY 'upscale'
+        scanner.get_all_models.return_value = [
+            {"filename": "qwen_image_edit_2511_upscale.safetensors", "path": "/path/upscale", "type": "checkpoints"},
+        ]
+        matcher = ModelMatcher(scanner)
+        matcher._build_index()
+        
+        items_base = [{"id": 2, "current": "qwen_image_edit_2511_bf16.safetensors", "node_type": "CheckpointLoader", "widget_name": "ckpt"}]
+        result_base = matcher.match(items_base)
+        
+        # Should be empty match because 'upscale' is a critical mismatch
+        print(f"  Input: Base(bf16) -> Matched: {result_base}")
+        self.assertEqual(len(result_base), 0, "Should NOT match upscale model to base model request")
+
     async def async_test_google_search_stub(self):
         """Stub test for Google Search Regex with sites"""
         dummy_html = """

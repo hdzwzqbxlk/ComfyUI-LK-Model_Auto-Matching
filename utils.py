@@ -69,6 +69,15 @@ VARIANT_SUFFIXES = {
     'inpainting', 'depth', 'canny', 'openpose',
 }
 
+# 核心功能词保护列表（如果这些词在一边有而另一边没有，则视为不同模型）
+CRITICAL_TERMS = {
+    'upscale', 'upscaler', 'refiner', 'detailer',
+    'inpainting', 'inpaint',
+    'depth', 'canny', 'openpose', 'softedge', 'scribble', 'hed', 'mlsd', 'normalbae', 'seg', 'lineart',
+    'lora', 'lycoris', 'hypernetwork', 'embedding',
+    'motion', 'animate', 'video',
+}
+
 class AdvancedTokenizer:
     """
     统一的智能分词器，用于本地匹配和网络搜索
@@ -119,8 +128,8 @@ class AdvancedTokenizer:
             r'(?:^|[\-_.\s])(?:q\d+[a-z0-9_]*|f\d+|bf\d+|fp\d+|int\d+)(?:$|[\-_.\s])',
             # Common technical terms
             r'(?:^|[\-_.\s])(?:pruned|ema|emaonly|noema|full|safetensors|gguf|ckpt|pt|bin|pth|onnx)(?:$|[\-_.\s])',
-            # Speed/Variant terms
-            r'(?:^|[\-_.\s])(?:lightning|turbo|hyper|lcm|simpo|inpainting|depth|canny|openpose|lora)(?:$|[\-_.\s])',
+            # Speed/Variant terms (removed critical terms like inpainting/depth from here)
+            r'(?:^|[\-_.\s])(?:lightning|turbo|hyper|lcm|simpo)(?:$|[\-_.\s])',
         ]
         
         cleaned = base
@@ -236,6 +245,16 @@ class AdvancedTokenizer:
         tokens_b = set(AdvancedTokenizer.tokenize(name_b))
         
         if not tokens_a or not tokens_b: return 0.0
+        
+        # 1.5 Critical Mismatch Check
+        # 如果一侧有 Critical Term 而另一侧没有 -> 0分
+        # symmetric_difference = (A - B) | (B - A)
+        diff = tokens_a.symmetric_difference(tokens_b)
+        critical_mismatch = diff.intersection(CRITICAL_TERMS)
+        if critical_mismatch:
+            # 这是一个及其严格的惩罚：只要有关键功能词不匹配，直接判定为不同模型
+            # e.g. "upscale" vs "" -> mismatch
+            return 0.0
         
         intersection = len(tokens_a.intersection(tokens_b))
         union = len(tokens_a.union(tokens_b))
