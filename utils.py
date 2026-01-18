@@ -259,7 +259,7 @@ class AdvancedTokenizer:
         # (?:[\W_]|^)xl -> start of word xl
         # xl(?:[\W_]|$) -> end of word xl
         # AND capture 'ends with xl' logic via .*xl(\.safetensors)?
-        if re.search(r'(?:[\W_]|^)xl(?:[\W_]|$)|sdxl|base_1\.0|refiner|supir|juggernaut', lower):
+        if re.search(r'(?:[\W_]|^)xl(?:[\W_]|$)|sdxl|base_1\.0|refiner|supir', lower):
             return "sdxl"
         # Case: juggernautXL (no separator). Explicit check or heuristic?
         # If 'xl' is at the end of the name part (before ext)
@@ -286,9 +286,36 @@ class AdvancedTokenizer:
         return "unknown"
 
     @staticmethod
+    def detect_quantization(filename):
+        """
+        检测模型量化/精度版本
+        返回: 'bf16', 'fp16', 'fp32', 'int8', 'q4_k_m', 'pixel', ... 或 None
+        """
+        lower = filename.lower()
+        # Regex for specific quantizations
+        # 1. GGUF Quants (Complex)
+        # q4_0, q4_1, q5_0, q5_1, q8_0, q4_k, q4_k_m, q4_k_s...
+        # match full pattern q\d+[a-z0-9_]*
+        # Allow separators: - _ .
+        gguf_match = re.search(r'(?:[\W_]|^)(q\d+[a-z0-9_]*)(?:[\W_]|$)', lower)
+        if gguf_match:
+            return gguf_match.group(1)
+            
+        # 2. Precision
+        if "bf16" in lower: return "bf16"
+        if "fp16" in lower: return "fp16"
+        if "fp32" in lower: return "fp32"
+        if "fp8" in lower: return "fp8"
+        if "int8" in lower: return "int8"
+        if "int4" in lower: return "int4"
+        
+        # 3. No quant detected
+        return None
+
+    @staticmethod
     def calculate_similarity(name_a, name_b):
         """
-        计算综合相似度 (Jaccard + Sequence + Semantic Check)
+        计算综合相似度 (Jaccard + Sequence + Semantic + Quantization)
         """
         if not name_a or not name_b: return 0.0
         
@@ -296,12 +323,19 @@ class AdvancedTokenizer:
         base_a = AdvancedTokenizer.detect_base_model(name_a)
         base_b = AdvancedTokenizer.detect_base_model(name_b)
         
-        # 如果两者都被识别出架构，且架构不同 -> 0分 (直接不兼容)
-        # e.g. "Juggernaut_XL" vs "Juggernaut_v7" (SD1.5) -> mismatch
-        # exception: 'pony' often runs on 'sdxl' nodes, but user likely wants pony-to-pony match.
-        # Strict mode: mismatch = 0
         if base_a != "unknown" and base_b != "unknown":
             if base_a != base_b:
+                return 0.0
+
+        # === 0.5 Quantization/Precision Check (The "Strict" Filter) ===
+        quant_a = AdvancedTokenizer.detect_quantization(name_a)
+        quant_b = AdvancedTokenizer.detect_quantization(name_b)
+        
+        # 只有当两边都有明确量化标记，且不一致时，才判定不兼容
+        # e.g. "bf16" vs "fp16" -> Mismatch
+        # e.g. "foo" vs "foo_fp16" -> Allow (one side is ambig)
+        if quant_a and quant_b:
+            if quant_a != quant_b:
                 return 0.0
         
         # 1. Token Similarity (Jaccard)
