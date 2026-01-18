@@ -1,18 +1,19 @@
 """
 网络搜索模块测试脚本
-用于验证 searcher.py 的搜索词提取和相似度计算功能
+用于验证 utils.py 中的搜索词提取和相似度计算功能 (原 searcher.py 功能)
 """
 import sys
 import os
+import asyncio
 
 # 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from utils import AdvancedTokenizer, NOISE_SUFFIXES
 from searcher import ModelSearcher
 
 def test_extract_search_terms():
     """测试搜索词提取功能"""
-    searcher = ModelSearcher()
     
     test_cases = [
         # (输入文件名, 预期包含的关键词)
@@ -25,14 +26,14 @@ def test_extract_search_terms():
     ]
     
     print("=" * 60)
-    print("测试: _extract_search_terms")
+    print("测试: AdvancedTokenizer.extract_search_terms")
     print("=" * 60)
     
     passed = 0
     failed = 0
     
     for filename, expected_keywords in test_cases:
-        terms = searcher._extract_search_terms(filename)
+        terms = AdvancedTokenizer.extract_search_terms(filename)
         # 检查至少有一个搜索词包含预期关键词
         all_terms_text = ' '.join(terms).lower()
         
@@ -54,26 +55,25 @@ def test_extract_search_terms():
 
 def test_calculate_similarity():
     """测试相似度计算功能"""
-    searcher = ModelSearcher()
     
     test_cases = [
         # (名称A, 名称B, 预期相似度范围)
         ("realvisxl_v3", "realvisxl-v3.0-turbo", (0.4, 1.0)),  # 应该高
-        ("sd_xl_base", "stable-diffusion-xl-base-1.0", (0.25, 1.0)),  # 中等 (由于分词细化，分数略有下降但仍高于阈值)
+        ("sd_xl_base", "stable-diffusion-xl-base-1.0", (0.25, 1.0)),  # 中等
         ("flux1-dev", "flux.1-dev", (0.5, 1.0)),  # 应该高
         ("my_random_model", "completely_different_thing", (0.0, 0.3)),  # 应该低
         ("controlnet-canny", "controlnet_canny_sdxl", (0.4, 1.0)),  # 应该高
     ]
     
     print("\n" + "=" * 60)
-    print("测试: _calculate_similarity")
+    print("测试: AdvancedTokenizer.calculate_similarity")
     print("=" * 60)
     
     passed = 0
     failed = 0
     
     for name_a, name_b, (min_score, max_score) in test_cases:
-        score = searcher._calculate_similarity(name_a, name_b)
+        score = AdvancedTokenizer.calculate_similarity(name_a, name_b)
         
         if min_score <= score <= max_score:
             print(f"✓ '{name_a}' vs '{name_b}'")
@@ -90,7 +90,6 @@ def test_calculate_similarity():
 
 def test_noise_removal():
     """测试噪声词移除"""
-    searcher = ModelSearcher()
     
     print("\n" + "=" * 60)
     print("测试: 噪声后缀词移除")
@@ -98,9 +97,10 @@ def test_noise_removal():
     
     # 包含大量噪声词的文件名
     noisy_filename = "realvisxl_v3_turbo_fp16_pruned_emaonly_final.safetensors"
-    terms = searcher._extract_search_terms(noisy_filename)
+    terms = AdvancedTokenizer.extract_search_terms(noisy_filename)
     
     # 所有提取的词中不应包含这些噪声词
+    # NOISE_SUFFIXES 现在在 utils 中
     noise_words = {'fp16', 'pruned', 'emaonly', 'final', 'safetensors'}
     all_terms_text = ' '.join(terms).lower()
     
@@ -119,8 +119,7 @@ def test_noise_removal():
 
 
 async def test_modelscope_search():
-    """测试 ModelScope 搜索功能"""
-    import asyncio
+    """测试 ModelScope 搜索功能 (集成测试)"""
     searcher = ModelSearcher()
     
     print("\n" + "=" * 60)
@@ -139,6 +138,7 @@ async def test_modelscope_search():
     for query, expected_keywords in test_cases:
         print(f"\n搜索: '{query}'...")
         try:
+            # ModelSearcher 现在是 searcher._search_modelscope_single
             result = await searcher._search_modelscope_single(query, query)
             
             if result:
@@ -151,12 +151,12 @@ async def test_modelscope_search():
                 
                 if has_keyword and "modelscope.cn" in page_url:
                     print(f"✓ 找到模型: {result.get('name')}")
-                    print(f"  -＞ 页面: {page_url}")
-                    print(f"  -＞ 相似度: {score:.3f}")
+                    print(f"  -> 页面: {page_url}")
+                    print(f"  -> 相似度: {score:.3f}")
                     passed += 1
                 else:
                     print(f"✗ 结果不符合预期")
-                    print(f"  -＞ 结果: {result}")
+                    print(f"  -> 结果: {result}")
                     failed += 1
             else:
                 print(f"✗ 未找到结果")
@@ -171,14 +171,13 @@ async def test_modelscope_search():
 
 
 if __name__ == "__main__":
-    import asyncio
     
-    print("\n🧪 ComfyUI-LK-Model_Auto-Matching 搜索模块测试\n")
+    print("\n🧪 ComfyUI-LK-Model_Auto-Matching 搜索模块测试 (Unit + Integration)\n")
     
     results = []
-    results.append(("搜索词提取", test_extract_search_terms()))
-    results.append(("相似度计算", test_calculate_similarity()))
-    results.append(("噪声词移除", test_noise_removal()))
+    results.append(("搜索词提取 (Utils)", test_extract_search_terms()))
+    results.append(("相似度计算 (Utils)", test_calculate_similarity()))
+    results.append(("噪声词移除 (Utils)", test_noise_removal()))
     
     # 运行 ModelScope 异步测试
     print("\n" + "-" * 60)
@@ -199,4 +198,3 @@ if __name__ == "__main__":
             all_passed = False
     
     print("\n" + ("🎉 所有测试通过!" if all_passed else "⚠️ 存在失败的测试"))
-
