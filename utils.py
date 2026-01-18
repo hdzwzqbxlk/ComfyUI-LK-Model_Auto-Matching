@@ -175,6 +175,12 @@ class AdvancedTokenizer:
         base_name, _ = os.path.splitext(name_only)
         normalized_name = base_name.lower()
         
+        # 0.5 Raw Exact Match (Highest Priority for Specific Files)
+        # e.g. "qwen-image-edit-2511-Q4_K_S.gguf" -> "qwen image edit 2511 Q4 K S"
+        # Don't strip variants here! User wants exact file.
+        raw_spaced = re.sub(r'[\-_.]+', ' ', base_name).strip()
+        search_terms.append(raw_spaced)
+
         # 1. 检查模型模式 (Pattern Matching) - 优先级最高
         for pattern_str, replacement in MODEL_PATTERNS.items():
             if re.search(pattern_str, normalized_name):
