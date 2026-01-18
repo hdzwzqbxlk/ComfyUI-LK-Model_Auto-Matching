@@ -1,5 +1,12 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# 敏感数据 / 本地索引 (不应上传)
 model_index*.json
+config.json
+
+# 调试脚本
+debug_*.py
+test_*.py
 tests/validate_user_index.py

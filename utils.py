@@ -53,6 +53,110 @@ MODEL_ALIASES = {
     'qwen': 'qwen',
 }
 
+# ============================================================
+# ComfyUI 官方主流模型精确映射表
+# 来源: https://comfyanonymous.github.io/ComfyUI_examples/
+# 格式: {模型基础名(无扩展名): HuggingFace 仓库 ID}
+# ============================================================
+COMFYUI_POPULAR_MODELS = {
+    # === SD1.5 系列 ===
+    'v1-5-pruned-emaonly': 'Comfy-Org/stable-diffusion-v1-5-archive',
+    'v1-5-pruned-emaonly-fp16': 'Comfy-Org/stable-diffusion-v1-5-archive',
+    'v1-5-pruned': 'Comfy-Org/stable-diffusion-v1-5-archive',
+    '512-inpainting-ema': 'runwayml/stable-diffusion-inpainting',
+    
+    # === SDXL 系列 ===
+    'sd_xl_base_1.0': 'stabilityai/stable-diffusion-xl-base-1.0',
+    'sd_xl_base_1.0_0.9vae': 'stabilityai/stable-diffusion-xl-base-1.0',
+    'sd_xl_refiner_1.0': 'stabilityai/stable-diffusion-xl-refiner-1.0',
+    'sd_xl_refiner_1.0_0.9vae': 'stabilityai/stable-diffusion-xl-refiner-1.0',
+    'sdxl_vae': 'madebyollin/sdxl-vae-fp16-fix',
+    'juggernautXL_juggXIByRundiffusion': 'RunDiffusion/Juggernaut-XI-v11',
+    
+    # === SD3 / SD3.5 系列 ===
+    'sd3_medium': 'stabilityai/stable-diffusion-3-medium',
+    'sd3_medium_incl_clips': 'stabilityai/stable-diffusion-3-medium',
+    'sd3.5_large': 'stabilityai/stable-diffusion-3.5-large',
+    'sd3.5_large_turbo': 'stabilityai/stable-diffusion-3.5-large-turbo',
+    'sd3.5_medium': 'stabilityai/stable-diffusion-3.5-medium',
+    'sd3.5_large_fp8_scaled': 'Comfy-Org/stable-diffusion-3.5-fp8',
+    'sd3.5_medium_incl_clips_t5xxlfp8scaled': 'Comfy-Org/stable-diffusion-3.5-fp8',
+    
+    # === Flux 系列 ===
+    'flux1-dev': 'black-forest-labs/FLUX.1-dev',
+    'flux1-schnell': 'black-forest-labs/FLUX.1-schnell',
+    'flux1-dev-fp8': 'Comfy-Org/flux1-dev',
+    'flux1-schnell-fp8': 'Comfy-Org/flux1-schnell',
+    
+    # === 文本编码器 / CLIP ===
+    'clip_l': 'Comfy-Org/stable-diffusion-3.5-fp8',
+    'clip_g': 'Comfy-Org/stable-diffusion-3.5-fp8',
+    't5xxl': 'comfyanonymous/flux_text_encoders',
+    't5xxl_fp16': 'comfyanonymous/flux_text_encoders',
+    't5xxl_fp8_e4m3fn': 'comfyanonymous/flux_text_encoders',
+    't5xxl_fp8_e4m3fn_scaled': 'comfyanonymous/flux_text_encoders',
+    'clip_vision_g': 'comfyanonymous/clip_vision_g',
+    
+    # === VAE ===
+    'ae': 'Comfy-Org/Lumina_Image_2.0_Repackaged',
+    'vae-ft-mse-840000-ema-pruned': 'stabilityai/sd-vae-ft-mse',
+    
+    # === SUPIR (超分辨率) ===
+    'SUPIR-v0F': 'Kijai/SUPIR_pruned',
+    'SUPIR-v0F_fp16': 'Kijai/SUPIR_pruned',
+    'SUPIR-v0Q': 'Kijai/SUPIR_pruned',
+    'SUPIR-v0Q_fp16': 'Kijai/SUPIR_pruned',
+    
+    # === AuraFlow ===
+    'aura_flow_0.2': 'fal/AuraFlow-v0.2',
+    'aura_flow_0.3': 'fal/AuraFlow-v0.3',
+    
+    # === LTX-Video 系列 ===
+    'ltx-video-2b-v0.9': 'Lightricks/LTX-Video',
+    'ltx-2-19b-distilled': 'Lightricks/LTX-Video-0.9.7',
+    'ltx-2-19b-distilled-fp8': 'Lightricks/LTX-Video-0.9.7',
+    
+    # === Mochi (视频模型) ===
+    'mochi_preview_fp8_scaled': 'genmo/mochi-1-preview',
+    'mochi_preview': 'genmo/mochi-1-preview',
+    
+    # === SVD (Stable Video Diffusion) ===
+    'svd': 'stabilityai/stable-video-diffusion-img2vid',
+    'svd_xt': 'stabilityai/stable-video-diffusion-img2vid-xt',
+    'svd_xt_1_1': 'stabilityai/stable-video-diffusion-img2vid-xt-1-1',
+    
+    # === Audio 模型 ===
+    'stable-audio-open-1_0': 'stabilityai/stable-audio-open-1.0',
+    'ace_step_v1_3.5b': 'ACE-Step/ACE-Step-v1-3.5B',
+    
+    # === ControlNet ===
+    'sd3.5_large_controlnet_canny': 'stabilityai/stable-diffusion-3.5-controlnets',
+    'sd3.5_large_controlnet_depth': 'stabilityai/stable-diffusion-3.5-controlnets',
+    'sd3.5_large_controlnet_blur': 'stabilityai/stable-diffusion-3.5-controlnets',
+    
+    # === 加速 LoRA (Hyper/LCM/TCD/Lightning) ===
+    # SD1.5 加速
+    'Hyper-SD15-8steps-lora': 'ByteDance/Hyper-SD',
+    'LCM_LoRA_SDv15': 'latent-consistency/lcm-lora-sdv1-5',
+    'TCD-SD15-LoRA': 'h1t/TCD-SD15-LoRA',
+    # SDXL 加速
+    'Hyper-SDXL-8steps-lora': 'ByteDance/Hyper-SD',
+    'Hyper-SDXL-8steps-lora_rank1': 'ByteDance/Hyper-SD',
+    'LCM_LoRA_Weights_SDXL': 'latent-consistency/lcm-lora-sdxl',
+    'TCD-SDXL-LoRA': 'h1t/TCD-SDXL-LoRA',
+    'sdxl_lightning_2step_lora': 'ByteDance/SDXL-Lightning',
+    'sdxl_lightning_4step_lora': 'ByteDance/SDXL-Lightning',
+    'sdxl_lightning_8step_lora': 'ByteDance/SDXL-Lightning',
+    # Flux 加速
+    'FLUX.1-Turbo-Alpha': 'alimama-creative/FLUX.1-Turbo-Alpha',
+    'FLUX.1-Turbo-Alpha-LoRA-8-Step_v1': 'alimama-creative/FLUX.1-Turbo-Alpha',
+    
+    # === 其他热门模型 ===
+    'dreamshaper_8': 'Lykon/DreamShaper',
+    'realvisxl_v5.0': 'SG161222/RealVisXL_V5.0',
+    'juggernaut_xl': 'RunDiffusion/Juggernaut-XL-v9',
+}
+
 # 变体后缀：需要被“剥离”以提取核心模型名的术语
 # 包括量化 (Q4_K, bf16), 格式 (gguf, safetensors), 以及功能变体 (lightning, inpainting)
 VARIANT_SUFFIXES = {
@@ -70,12 +174,17 @@ VARIANT_SUFFIXES = {
 }
 
 # 核心功能词保护列表（如果这些词在一边有而另一边没有，则视为不同模型）
+# 注意：只保留真正关键的功能差异词，避免过度严格
 CRITICAL_TERMS = {
+    # 功能变体（必须严格区分）
     'upscale', 'upscaler', 'refiner', 'detailer',
     'inpainting', 'inpaint',
+    # ControlNet 类型（必须严格区分）
     'depth', 'canny', 'openpose', 'softedge', 'scribble', 'hed', 'mlsd', 'normalbae', 'seg', 'lineart',
-    'lora', 'lycoris', 'hypernetwork', 'embedding',
-    'motion', 'animate', 'video',
+    # 注意：lora/video/motion/animate 已移除，因为：
+    # - lora 版本通常可以匹配到基座模型仓库
+    # - video 会导致 svd vs stable-video-diffusion 误判
+    # - 这些词的存在不代表根本性的模型差异
 }
 
 class AdvancedTokenizer:
@@ -114,31 +223,123 @@ class AdvancedTokenizer:
         return ordered_tokens
 
     @staticmethod
+    def lookup_popular_model(filename):
+        """
+        查找 ComfyUI 主流模型，如果匹配则返回 HuggingFace 仓库 ID
+        返回: (repo_id, matched_key) 或 (None, None)
+        """
+        # 提取基础名（无扩展名，无路径）
+        base_name = os.path.basename(filename)
+        # 移除常见扩展名
+        for ext in ['.safetensors', '.gguf', '.ckpt', '.pt', '.bin', '.pth']:
+            if base_name.lower().endswith(ext):
+                base_name = base_name[:-len(ext)]
+                break
+        
+        # 精确匹配（大小写不敏感）
+        base_lower = base_name.lower()
+        for key, repo_id in COMFYUI_POPULAR_MODELS.items():
+            if base_lower == key.lower():
+                return (repo_id, key)
+        
+        # 模糊匹配：尝试移除精度后缀再匹配
+        # 例如 "flux1-dev-fp8" -> "flux1-dev"
+        precision_suffixes = ['-fp8', '-fp16', '-bf16', '_fp8', '_fp16', '_bf16']
+        for suffix in precision_suffixes:
+            if base_lower.endswith(suffix):
+                stripped = base_lower[:-len(suffix)]
+                for key, repo_id in COMFYUI_POPULAR_MODELS.items():
+                    if stripped == key.lower():
+                        return (repo_id, key)
+        
+        return (None, None)
+
+    @staticmethod
     def _strip_variant_terms(text):
         """
         使用 Regex 移除文件名中的技术/变体术语
         返回清洗后的字符串 (保留原有的非技术分隔符)
+        
+        保护关键词：dev, schnell, base, refiner, instruct 等
+        移除：量化标记(Q4_K_M, bf16等)、格式后缀(gguf, safetensors等)、速度变体(lightning等)
         """
         text = text.lower()
-        base, _ = os.path.splitext(text)
         
-        # 定义需要移除的正则模式
-        patterns = [
-            # Quantization: q4_k_m, q4_0, q5_1, q8, bf16, fp16, int8, etc.
-            r'(?:^|[\-_.\s])(?:q\d+[a-z0-9_]*|f\d+|bf\d+|fp\d+|int\d+)(?:$|[\-_.\s])',
-            # Common technical terms
-            r'(?:^|[\-_.\s])(?:pruned|ema|emaonly|noema|full|safetensors|gguf|ckpt|pt|bin|pth|onnx)(?:$|[\-_.\s])',
-            # Speed/Variant terms (removed critical terms like inpainting/depth from here)
-            r'(?:^|[\-_.\s])(?:lightning|turbo|hyper|lcm|simpo)(?:$|[\-_.\s])',
-        ]
+        # 只移除真正的模型文件扩展名
+        valid_extensions = {'.gguf', '.safetensors', '.ckpt', '.pt', '.bin', '.pth', '.onnx', '.pkl'}
+        base, ext = os.path.splitext(text)
+        if ext not in valid_extensions:
+            # 不是有效的模型扩展名，保留原始文本
+            base = text
         
-        cleaned = base
-        # 反复执行直到没有匹配
-        for _ in range(2):
-            for p in patterns:
-                # 替换为空格，避免粘连
-                cleaned = re.sub(p, ' ', cleaned)
+        # 需要移除的技术术语集合
+        remove_terms = {
+            # 量化标记
+            'q4', 'q5', 'q6', 'q8', 'q3', 'bf16', 'fp16', 'fp32', 'fp8', 'int8', 'int4',
+            'q4_0', 'q4_1', 'q5_0', 'q5_1', 'q8_0', 'q4_k', 'q4_k_m', 'q4_k_s', 'q5_k_m', 'q5_k_s', 'q6_k',
+            # 格式后缀
+            'gguf', 'safetensors', 'ckpt', 'pt', 'bin', 'pth', 'onnx', 'pkl',
+            # 训练变体
+            'pruned', 'ema', 'emaonly', 'noema', 'noembed', 'full',
+            # 发布标记
+            'fix', 'fixed', 'final', 'official', 'release',
+            # 内容分级
+            'sfw', 'nsfw',
+            # 速度变体
+            'lightning', 'turbo', 'hyper', 'lcm', 'simpo', '8steps', '4steps', '2steps',
+            # 单字母量化后缀 (k, m, s 仅在前面有 q 数字时移除，这里不单独移除)
+        }
         
+        # 保护的关键词（不管在哪里都保留）
+        protected = PROTECTED_TERMS | {
+            # 扩展保护词（确保这些永不被移除）
+            'dev', 'schnell', 'base', 'refiner', 'instruct', 'chat', 'vl', 'vision',
+            '1', '2', '3', '5', '7', '8', '13', '70',  # 常见模型版本号
+        }
+        
+        # 分词
+        parts = re.split(r'[\-_.]+', base)
+        filtered = []
+        
+        i = 0
+        while i < len(parts):
+            part = parts[i]
+            
+            # 跳过空串
+            if not part:
+                i += 1
+                continue
+            
+            # 检查是否是保护词
+            if part in protected:
+                filtered.append(part)
+                i += 1
+                continue
+            
+            # 检查是否是需要移除的技术术语
+            if part in remove_terms:
+                i += 1
+                continue
+            
+            # 检查是否是复杂量化标记 (q + 数字 + 可选后缀)
+            # 例如 q4, q4_k, q4_k_m 等复杂模式
+            if re.match(r'^q\d+[a-z0-9_]*$', part):
+                i += 1
+                continue
+            
+            # 检查是否是精度标记 (f16, fp16, bf16, etc.)
+            if re.match(r'^(?:bf|fp|f|int)\d+$', part):
+                i += 1
+                continue
+            
+            # 保留其他词
+            filtered.append(part)
+            i += 1
+        
+        # 重新组合
+        cleaned = ' '.join(filtered)
+        # 清理多余空格
+        cleaned = re.sub(r'\s+', ' ', cleaned)
         return cleaned.strip()
 
     @staticmethod
@@ -168,75 +369,72 @@ class AdvancedTokenizer:
     @staticmethod
     def extract_search_terms(filename):
         """
-        从文件名中提取多个候选搜索词（智能提取算法）
+        从文件名中提取多个候选搜索词（智能提取算法 - 优化版）
+        优化策略：核心清洗词优先，限制候选数量，智能去重
         """
         search_terms = []
         name_only = os.path.basename(filename)
         base_name, _ = os.path.splitext(name_only)
         normalized_name = base_name.lower()
         
-        # 0.5 Raw Exact Match (Highest Priority for Specific Files)
-        # e.g. "qwen-image-edit-2511-Q4_K_S.gguf" -> "qwen image edit 2511 Q4 K S"
-        # Don't strip variants here! User wants exact file.
-        raw_spaced = re.sub(r'[\-_.]+', ' ', base_name).strip()
-        search_terms.append(raw_spaced)
-
-        # 1. 检查模型模式 (Pattern Matching) - 优先级最高
-        for pattern_str, replacement in MODEL_PATTERNS.items():
-            if re.search(pattern_str, normalized_name):
-                search_terms.append(replacement)
-        
-        # 2. 智能清洗 (Regex Stripping)
-        # 这会保留原始分隔符 (如 qwen_image_edit_2511)
+        # === Phase 1: 核心清洗词 (最高优先级) ===
+        # 先进行智能清洗，移除所有技术后缀
         cleaned_base = AdvancedTokenizer._strip_variant_terms(name_only)
         
-        # 策略 A: 原始清洗串 (保留下划线/连字符)
-        # e.g., "qwen_image_edit_2511"
-        if cleaned_base and cleaned_base != normalized_name:
-             # 去除首尾可能残留的符号
-             clean_str = re.sub(r'^[\-_.]+|[\-_.]+$', '', cleaned_base.strip())
-             if clean_str:
-                search_terms.append(clean_str)
-
-        # 策略 B: 纯空格分隔 (Standard)
-        # e.g., "qwen image edit 2511"
+        # 策略 A: 清洗后的空格分隔版本（首选）
         tokens = AdvancedTokenizer.tokenize(cleaned_base)
-        # 过滤掉 Protected Terms 和 Noise (虽然 _strip 已经做了大部分，但 tokenize 还会拆分)
-        final_tokens = []
-        for t in tokens:
-            if t in NOISE_SUFFIXES: continue # Double check
-            final_tokens.append(t)
-            
+        # 二次过滤噪声词
+        final_tokens = [t for t in tokens if t not in NOISE_SUFFIXES]
+        
         if final_tokens:
+            # 首选：干净的空格分隔核心词
             space_joined = " ".join(final_tokens)
-            if space_joined not in search_terms:
-                search_terms.append(space_joined)
-                
-            # 策略 C: 强制下划线分隔 (针对某些且仅支持 snake_case 的索引)
+            search_terms.append(space_joined)
+            
+            # 策略 B: 下划线版本（部分 API 偏好）
             underscore_joined = "_".join(final_tokens)
-            if underscore_joined != space_joined and underscore_joined not in search_terms:
+            if underscore_joined != space_joined:
                 search_terms.append(underscore_joined)
         
-        # 3. 降级策略: 核心词截断
+        # === Phase 2: 模型模式匹配 ===
+        for pattern_str, replacement in MODEL_PATTERNS.items():
+            if re.search(pattern_str, normalized_name):
+                if replacement not in search_terms:
+                    search_terms.append(replacement)
+        
+        # === Phase 3: 清洗后的原始格式 (保留连字符/下划线) ===
+        if cleaned_base and cleaned_base != normalized_name:
+            clean_str = re.sub(r'^[\-_.\s]+|[\-_.\s]+$', '', cleaned_base.strip())
+            if clean_str and clean_str not in search_terms:
+                search_terms.append(clean_str)
+        
+        # === Phase 4: 核心词截断（降级策略）===
         if len(final_tokens) > 3:
-            search_terms.append(" ".join(final_tokens[:3]))
+            truncated = " ".join(final_tokens[:3])
+            if truncated not in search_terms:
+                search_terms.append(truncated)
         if len(final_tokens) > 2:
-            search_terms.append(" ".join(final_tokens[:2]))
-            
-        # 4. Fallback
+            truncated = " ".join(final_tokens[:2])
+            if truncated not in search_terms:
+                search_terms.append(truncated)
+        
+        # === Phase 5: 原始文件名 (最低优先级兜底) ===
+        # 仅当前面策略都失败时使用
         if not search_terms:
-            search_terms.append(normalized_name)
+            raw_spaced = re.sub(r'[\-_.]+', ' ', base_name).strip()
+            search_terms.append(raw_spaced)
 
-        # 去重并保持顺序
+        # === 智能去重与限制 ===
         unique_terms = []
         seen = set()
         for term in search_terms:
-            t = term.strip()
+            t = term.strip().lower()  # 统一小写比较
             if t and t not in seen:
                 seen.add(t)
-                unique_terms.append(t)
-                
-        return unique_terms
+                unique_terms.append(term.strip())  # 保留原始大小写
+        
+        # 限制候选词数量，避免过多 API 调用
+        return unique_terms[:5]
 
     @staticmethod
     def detect_base_model(filename):
@@ -337,17 +535,39 @@ class AdvancedTokenizer:
         quant_a = AdvancedTokenizer.detect_quantization(name_a)
         quant_b = AdvancedTokenizer.detect_quantization(name_b)
         
+        # 特殊处理 GGUF 仓库级匹配：
+        # 如果候选名以 "-GGUF" 结尾（常见的 HuggingFace GGUF 仓库命名），
+        # 且不含具体量化标记，则视为"通配"仓库，包含所有量化变体
+        # e.g. "Qwen-Image-Edit-2511-GGUF" 仓库包含 Q4_K_S, Q8_0 等多个变体
+        name_a_upper = name_a.upper()
+        name_b_upper = name_b.upper()
+        is_gguf_repo_a = (name_a_upper.endswith("-GGUF") or "/GGUF" in name_a_upper) and not quant_a
+        is_gguf_repo_b = (name_b_upper.endswith("-GGUF") or "/GGUF" in name_b_upper) and not quant_b
+        
+        # 如果一侧是 GGUF 通配仓库，另一侧有具体量化，则跳过严格量化检测
+        skip_quant_check = (is_gguf_repo_a and quant_b) or (is_gguf_repo_b and quant_a)
+        
         # 只有当两边都有明确量化标记，且不一致时，才判定不兼容
         # e.g. "bf16" vs "fp16" -> Mismatch
         # e.g. "foo" vs "foo_fp16" -> Allow (one side is ambig)
-        if quant_a and quant_b:
+        if quant_a and quant_b and not skip_quant_check:
             if quant_a != quant_b:
                 return 0.0
         
-        # 1. Token Similarity (Jaccard)
-        # tokenize now returns list, convert to set
-        tokens_a = set(AdvancedTokenizer.tokenize(name_a))
-        tokens_b = set(AdvancedTokenizer.tokenize(name_b))
+        # === 预处理：移除仓库组织名前缀 ===
+        # HuggingFace 仓库格式通常是 "org/repo-name"，例如 "unsloth/Qwen-Image-Edit-2511-GGUF"
+        # 组织名对相似度匹配是噪声，应当移除
+        processed_a = name_a
+        processed_b = name_b
+        if "/" in name_a:
+            # 只保留仓库名部分 (最后一个 / 之后)
+            processed_a = name_a.rsplit("/", 1)[-1]
+        if "/" in name_b:
+            processed_b = name_b.rsplit("/", 1)[-1]
+        
+        # 1. Token Similarity (Jaccard) - 使用全部 token 检测关键词冲突
+        tokens_a = set(AdvancedTokenizer.tokenize(processed_a))
+        tokens_b = set(AdvancedTokenizer.tokenize(processed_b))
         
         if not tokens_a or not tokens_b: return 0.0
         
@@ -361,13 +581,31 @@ class AdvancedTokenizer:
             # e.g. "upscale" vs "" -> mismatch
             return 0.0
         
-        intersection = len(tokens_a.intersection(tokens_b))
-        union = len(tokens_a.union(tokens_b))
-        jaccard = intersection / union if union > 0 else 0
+        # 2. 核心 Token Jaccard (移除技术后缀后的匹配)
+        # 这对于 GGUF 仓库匹配至关重要：排除 q4, k, s 等噪声
+        core_a = AdvancedTokenizer.get_core_tokens(processed_a)
+        core_b = AdvancedTokenizer.get_core_tokens(processed_b)
         
-        # 2. Sequence Similarity (用于捕捉顺序和部分匹配)
+        if not core_a or not core_b:
+            # 降级到普通 token 匹配
+            intersection = len(tokens_a.intersection(tokens_b))
+            union = len(tokens_a.union(tokens_b))
+            jaccard = intersection / union if union > 0 else 0
+        else:
+            core_intersection = len(core_a.intersection(core_b))
+            core_union = len(core_a.union(core_b))
+            jaccard = core_intersection / core_union if core_union > 0 else 0
+            
+            # 核心词覆盖率奖励：如果较短的一侧核心词被完全覆盖，额外加分
+            smaller = core_a if len(core_a) <= len(core_b) else core_b
+            coverage = len(smaller.intersection(core_a & core_b)) / len(smaller) if smaller else 0
+            if coverage >= 0.9:
+                # 90%+ 核心词被覆盖，额外奖励 0.15
+                jaccard = min(1.0, jaccard + 0.15)
+        
+        # 3. Sequence Similarity (用于捕捉顺序和部分匹配)
         import difflib
-        matcher = difflib.SequenceMatcher(None, name_a.lower(), name_b.lower())
+        matcher = difflib.SequenceMatcher(None, processed_a.lower(), processed_b.lower())
         seq_ratio = matcher.ratio()
         
         # 加权平均: Token 相似度通常更重要，因为文件名可能有无关前缀/后缀

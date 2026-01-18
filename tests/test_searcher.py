@@ -20,7 +20,8 @@ def test_extract_search_terms():
         ("realvisxl_v3.0_turbo_fp16.safetensors", ["realvisxl"]),
         ("sd_xl_base_1.0.safetensors", ["sd", "xl"]),
         ("v1-5-pruned-emaonly.ckpt", ["v1"]),
-        ("flux1-dev.safetensors", ["flux1", "dev"]),
+        # flux1 会被智能分词为 flux 1，这是正确行为
+        ("flux1-dev.safetensors", ["flux", "dev"]),
         ("SDXL_Juggernaut_XL_v9.safetensors", ["juggernaut", "xl"]),
         ("controlnet-canny-sdxl-1.0.safetensors", ["controlnet", "canny", "sdxl"]),
     ]

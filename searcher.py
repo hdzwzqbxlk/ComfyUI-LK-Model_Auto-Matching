@@ -117,6 +117,20 @@ class ModelSearcher:
             print(f"[AutoModelMatcher] Cache Hit: {filename}")
             return self.search_cache[filename]
 
+        # 0.5 主流模型快速匹配 (ComfyUI 官方模型直接返回 HF 链接)
+        repo_id, matched_key = AdvancedTokenizer.lookup_popular_model(filename)
+        if repo_id:
+            print(f"[AutoModelMatcher] ⚡ 主流模型快速匹配: {matched_key} -> {repo_id}")
+            result = {
+                "url": f"https://huggingface.co/{repo_id}/tree/main",
+                "source": "HuggingFace (ComfyUI官方)",
+                "name": repo_id,
+                "pageUrl": f"https://huggingface.co/{repo_id}",
+                "score": 1.0  # 精确匹配满分
+            }
+            self.search_cache[filename] = result
+            return result
+
         # 1. 提取候选搜索词
         # 使用统一的 AdvancedTokenizer
         search_terms = AdvancedTokenizer.extract_search_terms(filename)
@@ -168,7 +182,11 @@ class ModelSearcher:
     async def _search_modelscope_multi(self, search_terms, original_base_name):
         for term in search_terms:
             result = await self._search_modelscope_single(term, original_base_name)
-            if result: return result
+            if result:
+                # 高置信度早停：避免尝试后续搜索词
+                if result.get("score", 0) > 0.7:
+                    return result
+                return result
         return None
     
     async def _search_modelscope_single(self, query_term, original_base_name):
@@ -219,7 +237,8 @@ class ModelSearcher:
                                 "score": score
                             }
                     
-                    if best_match and best_score >= 0.25:
+                    # 提高阈值到 0.35，减少误匹配
+                    if best_match and best_score >= 0.35:
                         return best_match
         except Exception:
             pass
@@ -228,7 +247,11 @@ class ModelSearcher:
     async def _search_civitai_multi(self, search_terms, original_base_name):
         for term in search_terms:
             result = await self._search_civitai_single(term, original_base_name)
-            if result: return result
+            if result:
+                # 高置信度早停
+                if result.get("score", 0) > 0.7:
+                    return result
+                return result
         return None
     
     async def _search_civitai_single(self, query_term, original_base_name):
@@ -276,7 +299,8 @@ class ModelSearcher:
                                         "pageUrl": f"https://civitai.com/models/{model_id}?modelVersionId={version_id}",
                                         "score": combined_score
                                     }
-                    if best_match and best_score >= 0.30:
+                    # 提高阈值到 0.40，减少误匹配
+                    if best_match and best_score >= 0.40:
                         return best_match
         except Exception as e:
             print(f"[AutoModelMatcher] Civitai 搜索错误: {e}")
@@ -285,7 +309,11 @@ class ModelSearcher:
     async def _search_hf_multi(self, search_terms, original_base_name):
         for term in search_terms:
             result = await self._search_hf_single(term, original_base_name)
-            if result: return result
+            if result:
+                # 高置信度早停
+                if result.get("score", 0) > 0.7:
+                    return result
+                return result
         return None
     
     async def _search_hf_single(self, query_term, original_base_name):
@@ -321,7 +349,8 @@ class ModelSearcher:
                                 "pageUrl": f"https://huggingface.co/{model_id}",
                                 "score": score
                             }
-                    if best_match and best_score >= 0.25:
+                    # 提高阈值到 0.35，减少误匹配
+                    if best_match and best_score >= 0.35:
                         return best_match
         except Exception as e:
             print(f"[AutoModelMatcher] HuggingFace 搜索错误: {e}")
@@ -433,27 +462,44 @@ class ModelSearcher:
                     
                     html = await response.text()
                     
+                    # 预处理：提取 Google 跳转链接并解码
+                    # Google 链接通常是 /url?q=https%3A%2F%2F...&sa=...
+                    decoded_urls = []
+                    # Relaxed regex to capture encoded 'https%3A...'
+                    google_redirects = re.findall(r'url\?q=([^"&]+)', html)
+                    for raw_link in google_redirects:
+                        try:
+                            decoded = urllib.parse.unquote(raw_link)
+                            if decoded.startswith("http"):
+                                decoded_urls.append(decoded)
+                        except:
+                            pass
+                    
+                    # 将解码后的 URL 拼接到原始 HTML 中以便统一正则匹配
+                    # (简单粗暴但有效，无需重写下面的所有正则)
+                    search_content = html + "\n" + "\n".join(decoded_urls)
+                    
                     # 简单 Regex 提取链接
                     results = []
                     
                     # 1. Model Sites (Existing)
-                    ms_matches = re.findall(r'modelscope\.cn/models/([^/]+/[^/&?"]+)', html)
+                    ms_matches = re.findall(r'modelscope\.cn/models/([^/]+/[^/&?"]+)', search_content)
                     for ms_id in ms_matches: results.append(("modelscope", ms_id))
 
-                    civitai_matches = re.findall(r'civitai\.com/models/(\d+)', html)
+                    civitai_matches = re.findall(r'civitai\.com/models/(\d+)', search_content)
                     for model_id in civitai_matches: results.append(("civitai", model_id))
                         
-                    hf_matches = re.findall(r'huggingface\.co/([^/]+/[^/&?"]+)', html)
+                    hf_matches = re.findall(r'huggingface\.co/([^/]+/[^/&?"]+)', search_content)
                     for repo_id in hf_matches:
                         if "tree/main" not in repo_id and "blob/main" not in repo_id:
                              results.append(("hf", repo_id))
                              
                     # 2. Documentation Sites (New)
                     # Extract full URLs for docs
-                    doc_matches = re.findall(r'(https://docs\.comfy\.org/[^"&?\s]+)', html)
+                    doc_matches = re.findall(r'(https://docs\.comfy\.org/[^"&?\s]+)', search_content)
                     for doc_url in doc_matches: results.append(("doc", doc_url))
                     
-                    gh_matches = re.findall(r'(https://github\.com/[^/]+/[^/]+)', html)
+                    gh_matches = re.findall(r'(https://github\.com/[^/]+/[^/]+)', search_content)
                     for gh_url in gh_matches: results.append(("doc", gh_url))
                              
                     results = list(set(results))
@@ -490,8 +536,8 @@ class ModelSearcher:
                             # Re-verify score
                             score = AdvancedTokenizer.calculate_similarity(original_base_name, meta["name"])
                             meta["score"] = score
-                            # Strict Quant Check again (already done inside scrape, but good for others)
-                            if score > 0.25: 
+                            # 提高阈值到 0.35
+                            if score > 0.35: 
                                 return meta
         except Exception as e:
             pass
