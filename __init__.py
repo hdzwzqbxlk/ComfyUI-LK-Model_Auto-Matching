@@ -4,7 +4,7 @@ from .scanner import ModelScanner
 from .matcher import ModelMatcher
 from .searcher import ModelSearcher
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 __author__ = "LK"
 
 # 初始化核心组件
@@ -42,8 +42,9 @@ async def match_models(request):
 async def search_models(request):
     try:
         data = await request.json()
-        # 预期输入: {"items": [{"current": "v1.5.ckpt"}, ...]} 只需要搜索未匹配的
+        # 预期输入: {"items": [{"current": "v1.5.ckpt"}, ...], "ignore_cache": boolean} 
         items = data.get("items", [])
+        ignore_cache = data.get("ignore_cache", False)
         
         # 准备并发任务
         tasks = []
@@ -53,7 +54,7 @@ async def search_models(request):
         for item in items:
             filename = item.get("current")
             if filename and "." in filename:
-                tasks.append(searcher.search(filename))
+                tasks.append(searcher.search(filename, ignore_cache=ignore_cache))
                 original_filenames.append(filename)
         
         if not tasks:

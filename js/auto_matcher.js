@@ -89,7 +89,7 @@ app.registerExtension({
         const autoMatchBtn = document.createElement("button");
         autoMatchBtn.id = "lk-auto-match-btn";
         autoMatchBtn.innerHTML = `🪄 Start`;
-        autoMatchBtn.title = "扫描丢失模型并自动匹配";
+        autoMatchBtn.title = "扫描丢失模型并自动匹配 (Shift+点击: 强制刷新在线搜索)";
         autoMatchBtn.style.cssText = `
             background: linear-gradient(135deg, #64b5f6 0%, #42a5f5 100%);
             color: white;
@@ -193,8 +193,8 @@ app.registerExtension({
             }
         };
 
-        autoMatchBtn.onclick = async () => {
-            await runAutoMatch(autoMatchBtn);
+        autoMatchBtn.onclick = async (e) => {
+            await runAutoMatch(autoMatchBtn, e.shiftKey);
         };
 
         // --- 挂载 ---
@@ -212,7 +212,7 @@ async function showSettingsDialog() {
     content.style.fontFamily = "sans-serif";
 
     const h3 = document.createElement("h3");
-    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">v1.1.1</span>`;
+    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">v1.1.3</span>`;
     h3.style.color = "#eee";
     h3.style.marginTop = "0";
     content.appendChild(h3);
@@ -393,7 +393,7 @@ async function showSettingsDialog() {
     app.ui.dialog.show(content);
 }
 
-async function runAutoMatch(btn) {
+async function runAutoMatch(btn, ignoreCache = false) {
     if (!app.graph || !app.graph._nodes || app.graph._nodes.length === 0) {
         app.ui.dialog.show("⚠️ 当前画布为空，请先加载工作流。");
         return;
@@ -444,7 +444,7 @@ async function runAutoMatch(btn) {
 
             const searchResponse = await api.fetchApi("/auto-matcher/search", {
                 method: "POST",
-                body: JSON.stringify({ items: uniqueMissing }),
+                body: JSON.stringify({ items: uniqueMissing, ignore_cache: ignoreCache }),
                 headers: { "Content-Type": "application/json" }
             });
             const searchData = await searchResponse.json();

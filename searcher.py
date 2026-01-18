@@ -106,14 +106,14 @@ class ModelSearcher:
         except Exception as e:
             return False, str(e)
 
-    async def search(self, filename):
+    async def search(self, filename, ignore_cache=False):
         """
         搜索模型下载链接 (带缓存)
         """
         if not filename: return None
         
         # 0. 检查缓存
-        if filename in self.search_cache:
+        if not ignore_cache and filename in self.search_cache:
             print(f"[AutoModelMatcher] Cache Hit: {filename}")
             return self.search_cache[filename]
 
