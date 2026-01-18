@@ -4,6 +4,7 @@ import urllib.parse
 import os
 import json
 import difflib
+import re
 try:
     from .utils import AdvancedTokenizer
 except ImportError:
@@ -260,6 +261,10 @@ class ModelSearcher:
                                 file_score = AdvancedTokenizer.calculate_similarity(original_lower, fname_base)
                                 full_name = f"{model_name} {version_name}".lower()
                                 model_score = AdvancedTokenizer.calculate_similarity(original_lower, full_name)
+                                
+                                # [Strict Check] If file score is strictly 0 (mismatch), discard even if model matches
+                                if file_score < 0.05: continue
+                                
                                 combined_score = file_score * 0.6 + model_score * 0.4
                                 
                                 if combined_score > best_score:
@@ -346,18 +351,69 @@ class ModelSearcher:
             pass
         return None
 
+
+        return None
+
+    async def _deep_scrape_page(self, url, target_filename):
+        """深入抓取网页，寻找匹配的下载直链"""
+        try:
+            print(f"[AutoModelMatcher] 正在挖掘页面直链: {url}")
+            timeout = aiohttp.ClientTimeout(total=10)
+            headers = self._get_headers() # generic
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with session.get(url) as response:
+                    if response.status != 200: return None
+                    html = await response.text()
+                    
+                    # 提取所有 .safetensors, .gguf, .ckpt 链接
+                    # href="..."
+                    links = re.findall(r'href=["\'](https?://[^"\']+\.(?:safetensors|gguf|ckpt|pt|pth))["\']', html)
+                    
+                    best_link = None
+                    best_score = 0.0
+                    target_base = os.path.splitext(target_filename)[0].lower()
+                    
+                    for link in links:
+                        # link is download url
+                        fname = link.split("/")[-1]
+                        fname = urllib.parse.unquote(fname)
+                        fname_base = os.path.splitext(fname)[0].lower()
+                        
+                        # Calculate Similarity
+                        score = AdvancedTokenizer.calculate_similarity(target_base, fname_base)
+                        
+                        # Strict Quantization Check inside scraping too
+                        quant_target = AdvancedTokenizer.detect_quantization(target_filename)
+                        quant_cand = AdvancedTokenizer.detect_quantization(fname)
+                        if quant_target and quant_cand and quant_target != quant_cand:
+                            # Strict mismatch
+                            continue
+                            
+                        if score > best_score:
+                            best_score = score
+                            best_link = link
+                            
+                    if best_link and best_score > 0.4: # slightly higher threshold for validation
+                        return {
+                            "url": best_link,
+                            "source": "Doc/GitHub (Scraped)",
+                            "name": os.path.basename(best_link),
+                            "pageUrl": url,
+                            "score": best_score
+                        }
+        except Exception as e:
+            print(f"[AutoModelMatcher] Deep scrape failed: {e}")
+        return None
+
     async def _search_google_html(self, query, original_base_name):
         """
         使用 Google 搜索 (HTML Scraper) 作为最后的兜底
-        技巧: 使用 site:modelscope.cn OR site:civitai.com ... 进行精准目标搜索
+        技巧: site:modelscope.cn OR site:civitai.com ... 进行精准目标搜索
         """
         try:
             # 构建高级搜索指令
-            # site:modelscope.cn OR site:civitai.com OR site:huggingface.co "query"
-            # 加上引号强调 query 必须出现 (可选，视情况而定)
-            
-            # 简单的组合查询
-            sites = "site:modelscope.cn OR site:civitai.com OR site:huggingface.co"
+            # Expanded to include Documentation sites
+            sites = "site:modelscope.cn OR site:civitai.com OR site:huggingface.co OR site:docs.comfy.org OR site:github.com"
             search_query = urllib.parse.quote(f"{query} {sites}")
             
             # 使用 google.com 
@@ -367,7 +423,7 @@ class ModelSearcher:
             headers["Host"] = "www.google.com"
             headers["Referer"] = "https://www.google.com/"
             
-            print(f"[AutoModelMatcher] 尝试 Google 定向搜索: {query} (in ModelScope/Civitai/HF)")
+            print(f"[AutoModelMatcher] 尝试 Google 定向搜索: {query} (in ModelScope/Civitai/HF/Docs)")
             
             timeout = aiohttp.ClientTimeout(total=10)
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
@@ -380,21 +436,25 @@ class ModelSearcher:
                     # 简单 Regex 提取链接
                     results = []
                     
-                    # 匹配 ModelScope (新增): https://modelscope.cn/models/org/repo
+                    # 1. Model Sites (Existing)
                     ms_matches = re.findall(r'modelscope\.cn/models/([^/]+/[^/&?"]+)', html)
-                    for ms_id in ms_matches:
-                        results.append(("modelscope", ms_id))
+                    for ms_id in ms_matches: results.append(("modelscope", ms_id))
 
-                    # 匹配 Civitai ID: https://civitai.com/models/12345
                     civitai_matches = re.findall(r'civitai\.com/models/(\d+)', html)
-                    for model_id in civitai_matches:
-                        results.append(("civitai", model_id))
+                    for model_id in civitai_matches: results.append(("civitai", model_id))
                         
-                    # 匹配 HF Repo: https://huggingface.co/Owner/Repo
                     hf_matches = re.findall(r'huggingface\.co/([^/]+/[^/&?"]+)', html)
                     for repo_id in hf_matches:
                         if "tree/main" not in repo_id and "blob/main" not in repo_id:
                              results.append(("hf", repo_id))
+                             
+                    # 2. Documentation Sites (New)
+                    # Extract full URLs for docs
+                    doc_matches = re.findall(r'(https://docs\.comfy\.org/[^"&?\s]+)', html)
+                    for doc_url in doc_matches: results.append(("doc", doc_url))
+                    
+                    gh_matches = re.findall(r'(https://github\.com/[^/]+/[^/]+)', html)
+                    for gh_url in gh_matches: results.append(("doc", gh_url))
                              
                     results = list(set(results))
                     
@@ -403,8 +463,8 @@ class ModelSearcher:
                         
                     print(f"[AutoModelMatcher] Google 发现潜在链接: {len(results)} 个")
                     
-                    # 验证并获取元数据 (Limit 3)
-                    for platform, pid in results[:4]:
+                    # 验证并获取元数据 (Limit 5)
+                    for platform, pid in results[:5]:
                         meta = None
                         if platform == "civitai":
                              meta = await self._fetch_civitai_meta(pid)
@@ -416,17 +476,21 @@ class ModelSearcher:
                                  "pageUrl": f"https://huggingface.co/{pid}",
                              }
                         elif platform == "modelscope":
-                             # 简单构造，尽量去 verify (但这里省略 API 调用，直接构造链接)
                              meta = {
                                  "url": f"https://modelscope.cn/models/{pid}/files",
                                  "source": "ModelScope (Google)",
                                  "name": pid,
                                  "pageUrl": f"https://modelscope.cn/models/{pid}",
                              }
+                        elif platform == "doc":
+                            # Deep Scrape
+                            meta = await self._deep_scrape_page(pid, original_base_name + ".safetensors") # Hacky extension?
                              
                         if meta:
+                            # Re-verify score
                             score = AdvancedTokenizer.calculate_similarity(original_base_name, meta["name"])
                             meta["score"] = score
+                            # Strict Quant Check again (already done inside scrape, but good for others)
                             if score > 0.25: 
                                 return meta
         except Exception as e:
