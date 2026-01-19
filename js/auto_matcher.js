@@ -211,75 +211,120 @@ app.registerExtension({
 async function showSettingsDialog() {
     const content = document.createElement("div");
     content.style.width = "400px";
-    content.style.fontFamily = "sans-serif";
+    content.style.fontFamily = "'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+    content.style.background = "linear-gradient(145deg, #2a2a2a, #1e1e1e)";
+    content.style.borderRadius = "12px";
+    content.style.padding = "20px";
+    content.style.boxShadow = "0 8px 32px rgba(0, 0, 0, 0.5)";
+    content.style.border = "1px solid rgba(255, 255, 255, 0.1)";
 
     // 添加右上角关闭按钮
     const closeBtn = document.createElement("button");
     closeBtn.innerText = "✕";
+    closeBtn.title = "Close";
     closeBtn.style.cssText = `
         position: absolute;
-        top: 10px;
-        right: 10px;
+        top: 12px;
+        right: 12px;
         background: transparent;
         border: none;
-        color: #888;
-        font-size: 18px;
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 16px;
         cursor: pointer;
         z-index: 10;
+        padding: 4px;
+        border-radius: 50%;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
     `;
-    closeBtn.onmouseenter = () => closeBtn.style.color = "white";
-    closeBtn.onmouseleave = () => closeBtn.style.color = "#888";
+    closeBtn.onmouseenter = () => {
+        closeBtn.style.color = "white";
+        closeBtn.style.background = "rgba(255, 255, 255, 0.1)";
+    };
+    closeBtn.onmouseleave = () => {
+        closeBtn.style.color = "rgba(255, 255, 255, 0.6)";
+        closeBtn.style.background = "transparent";
+    };
     closeBtn.onclick = () => {
+        // Find the specific modal container and hide/close it
+        // ComfyUI usually appends .comfy-modal
         const modal = content.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
     };
     content.appendChild(closeBtn);
 
     const h3 = document.createElement("h3");
-    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">v${VERSION}</span>`;
+    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:11px; color:#888; font-weight:normal; margin-left:6px; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">v${VERSION}</span>`;
     h3.style.color = "#eee";
     h3.style.marginTop = "0";
+    h3.style.marginBottom = "5px";
+    h3.style.fontSize = "18px";
+    h3.style.borderBottom = "1px solid rgba(255,255,255,0.1)";
+    h3.style.paddingBottom = "10px";
     content.appendChild(h3);
 
     const desc = document.createElement("p");
     desc.innerText = "配置 API Key 以解决 Civitai 搜索被拦截 (403 Forbidden) 的问题。";
     desc.style.color = "#aaa";
     desc.style.fontSize = "13px";
+    desc.style.marginTop = "10px";
+    desc.style.lineHeight = "1.4";
     content.appendChild(desc);
 
     // Form
     const formGroup = document.createElement("div");
-    formGroup.style.marginBottom = "15px";
+    formGroup.style.marginBottom = "20px";
+    formGroup.style.marginTop = "15px";
 
     const label = document.createElement("label");
-    label.innerText = "Civitai API Key:";
+    label.innerText = "Civitai API Key";
     label.style.display = "block";
     label.style.color = "#ddd";
-    label.style.marginBottom = "5px";
-    label.style.fontWeight = "bold";
+    label.style.marginBottom = "8px";
+    label.style.fontWeight = "600";
+    label.style.fontSize = "13px";
     formGroup.appendChild(label);
+
+    const inputContainer = document.createElement("div");
+    inputContainer.style.position = "relative";
 
     const input = document.createElement("input");
     input.type = "password";
     input.placeholder = "Paste your API Key here...";
     input.style.width = "100%";
-    input.style.boxSizing = "border-box"; // Fix padding issue
-    input.style.padding = "10px";
-    input.style.background = "#2a2a2a";
+    input.style.boxSizing = "border-box";
+    input.style.padding = "10px 12px";
+    input.style.background = "rgba(0, 0, 0, 0.3)";
     input.style.border = "1px solid #444";
     input.style.color = "#eee";
     input.style.borderRadius = "6px";
     input.style.outline = "none";
-    input.style.fontSize = "14px";
-    input.style.transition = "border-color 0.2s";
-    input.onfocus = () => input.style.borderColor = "#64b5f6";
+    input.style.fontSize = "13px";
+    input.style.fontFamily = "monospace";
+    input.style.transition = "border-color 0.2s, background 0.2s";
+    input.onfocus = () => {
+        input.style.borderColor = "#64b5f6";
+        input.style.background = "rgba(0, 0, 0, 0.5)";
+    };
     input.onblur = () => input.style.borderColor = "#444";
-    formGroup.appendChild(input);
+    inputContainer.appendChild(input);
+    formGroup.appendChild(inputContainer);
 
     const helpLink = document.createElement("a");
     helpLink.href = "https://civitai.com/user/account";
     helpLink.target = "_blank";
-    helpLink.style.textAlign = "right"; // Right align the link
+    helpLink.innerText = "👉 Get API Key";
+    helpLink.style.display = "block";
+    helpLink.style.textAlign = "right";
+    helpLink.style.marginTop = "6px";
+    helpLink.style.fontSize = "12px";
+    helpLink.style.color = "#64b5f6";
+    helpLink.style.textDecoration = "none";
+    helpLink.style.opacity = "0.8";
     formGroup.appendChild(helpLink);
 
     content.appendChild(formGroup);
@@ -298,38 +343,36 @@ async function showSettingsDialog() {
     // Button Container
     const btnContainer = document.createElement("div");
     btnContainer.style.display = "flex";
-    btnContainer.style.gap = "10px";
+    btnContainer.style.gap = "12px";
+    btnContainer.style.marginTop = "25px";
     content.appendChild(btnContainer);
 
     // Test Button
     const testBtn = document.createElement("button");
     testBtn.innerHTML = `
-        <span style="font-size:16px; margin-right:6px;">🔌</span> 
-        <span>验证连通性</span>
+        <span style="font-size:14px; margin-right:6px;">🔌</span> 
+        <span>Test Connection</span>
     `;
     testBtn.title = "测试 Civitai API Key 是否有效";
-    testBtn.style.flex = "1"; // Equal width
+    testBtn.style.flex = "1";
     testBtn.style.display = "flex";
     testBtn.style.alignItems = "center";
     testBtn.style.justifyContent = "center";
     testBtn.style.padding = "10px";
     testBtn.style.background = "#37474f";
-    testBtn.style.color = "white";
-    testBtn.style.border = "1px solid #546e7a";
+    testBtn.style.color = "#eceff1";
+    testBtn.style.border = "1px solid #455a64";
     testBtn.style.borderRadius = "6px";
     testBtn.style.cursor = "pointer";
-    testBtn.style.fontSize = "14px";
-    testBtn.style.fontWeight = "bold";
+    testBtn.style.fontSize = "13px";
+    testBtn.style.fontWeight = "600";
     testBtn.style.transition = "all 0.2s ease";
-    testBtn.style.whiteSpace = "nowrap";
 
     testBtn.onmouseover = () => {
         testBtn.style.background = "#455a64";
-        testBtn.style.transform = "translateY(-1px)";
     };
     testBtn.onmouseout = () => {
         testBtn.style.background = "#37474f";
-        testBtn.style.transform = "translateY(0)";
     };
 
     testBtn.onclick = async () => {
@@ -368,32 +411,31 @@ async function showSettingsDialog() {
     // Save Button
     const saveBtn = document.createElement("button");
     saveBtn.innerHTML = `
-        <span style="font-size:16px; margin-right:6px;">💾</span> 
-        <span>保存设置</span>
+        <span style="font-size:14px; margin-right:6px;">💾</span> 
+        <span>Save Settings</span>
     `;
-    saveBtn.style.flex = "1"; // Equal width
+    saveBtn.style.flex = "1";
     saveBtn.style.display = "flex";
     saveBtn.style.alignItems = "center";
     saveBtn.style.justifyContent = "center";
     saveBtn.style.padding = "10px";
-    saveBtn.style.background = "linear-gradient(135deg, #6200ea 0%, #3700b3 100%)";
+    saveBtn.style.background = "linear-gradient(135deg, #7c4dff 0%, #651fff 100%)";
     saveBtn.style.color = "white";
     saveBtn.style.border = "none";
     saveBtn.style.borderRadius = "6px";
     saveBtn.style.cursor = "pointer";
-    saveBtn.style.fontWeight = "bold";
-    saveBtn.style.fontSize = "14px";
-    saveBtn.style.whiteSpace = "nowrap";
-    saveBtn.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+    saveBtn.style.fontWeight = "600";
+    saveBtn.style.fontSize = "13px";
+    saveBtn.style.boxShadow = "0 4px 12px rgba(101, 31, 255, 0.3)";
     saveBtn.style.transition = "all 0.2s ease";
 
     saveBtn.onmouseover = () => {
         saveBtn.style.transform = "translateY(-1px)";
-        saveBtn.style.boxShadow = "0 6px 8px rgba(0,0,0,0.3)";
+        saveBtn.style.boxShadow = "0 6px 16px rgba(101, 31, 255, 0.4)";
     };
     saveBtn.onmouseout = () => {
         saveBtn.style.transform = "translateY(0)";
-        saveBtn.style.boxShadow = "0 4px 6px rgba(0,0,0,0.2)";
+        saveBtn.style.boxShadow = "0 4px 12px rgba(101, 31, 255, 0.3)";
     };
 
     saveBtn.onclick = async () => {
@@ -406,7 +448,7 @@ async function showSettingsDialog() {
                 }),
                 headers: { "Content-Type": "application/json" }
             });
-            app.ui.dialog.close();
+            app.ui.dialog.close(); // Close the dialog
             app.ui.dialog.show("✅ 设置已保存！");
         } catch (e) {
             alert("保存失败: " + e.message);
@@ -494,35 +536,64 @@ function showResultsDialog(matches, downloadResults) {
     }
 
     const content = document.createElement("div");
-    content.style.position = "relative"; // Ensure absolute positioning works for children
-    content.style.padding = "10px";
-    content.style.fontFamily = "sans-serif";
-    content.style.minWidth = "400px";
+    content.style.position = "relative";
+    content.style.padding = "20px";
+    content.style.fontFamily = "'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+    content.style.minWidth = "450px";
     content.style.maxHeight = "80vh";
     content.style.overflowY = "auto";
+    content.style.background = "linear-gradient(145deg, #2a2a2a, #1e1e1e)";
+    content.style.borderRadius = "12px";
+    content.style.boxShadow = "0 10px 40px rgba(0,0,0,0.6)";
+    content.style.border = "1px solid rgba(255,255,255,0.08)";
+    content.style.color = "#eee";
 
     // 添加右上角关闭按钮 X
     const xBtn = document.createElement("button");
     xBtn.innerText = "✕";
+    xBtn.title = "Close";
     xBtn.style.cssText = `
         position: absolute;
-        top: 5px;
-        right: 5px;
+        top: 12px;
+        right: 12px;
         background: transparent;
         border: none;
-        color: #888;
-        font-size: 18px;
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 16px;
         cursor: pointer;
         z-index: 10;
-        padding: 5px;
+        padding: 4px;
+        border-radius: 50%;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
     `;
-    xBtn.onmouseenter = () => xBtn.style.color = "white";
-    xBtn.onmouseleave = () => xBtn.style.color = "#888";
+    xBtn.onmouseenter = () => {
+        xBtn.style.color = "white";
+        xBtn.style.background = "rgba(255, 255, 255, 0.1)";
+    };
+    xBtn.onmouseleave = () => {
+        xBtn.style.color = "rgba(255, 255, 255, 0.6)";
+        xBtn.style.background = "transparent";
+    };
     xBtn.onclick = () => {
         const modal = content.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
     };
     content.appendChild(xBtn);
+
+    // Header logic
+    const totalCount = matches.length + downloadResults.length;
+    const h2 = document.createElement("h2");
+    h2.innerText = `Auto Match Results (${totalCount})`;
+    h2.style.margin = "0 0 15px 0";
+    h2.style.fontSize = "20px";
+    h2.style.fontWeight = "600";
+    h2.style.color = "white";
+    content.appendChild(h2);
 
     // Helper to group items by type
     const groupByType = (items) => {
@@ -538,11 +609,12 @@ function showResultsDialog(matches, downloadResults) {
     // --- Local Matches Section ---
     if (matches.length > 0) {
         const h3 = document.createElement("h3");
-        h3.innerText = `✅ 本地匹配 (${matches.length})`;
-        h3.style.color = "#4caf50";
-        h3.style.borderBottom = "1px solid #4caf50";
-        h3.style.paddingBottom = "5px";
-        h3.style.marginTop = "0";
+        h3.innerHTML = `✅ 本地匹配 <span style="font-size:12px; font-weight:normal; opacity:0.7">(${matches.length})</span>`;
+        h3.style.color = "#81c784";
+        h3.style.borderBottom = "1px solid rgba(129, 199, 132, 0.3)";
+        h3.style.paddingBottom = "6px";
+        h3.style.marginTop = "5px";
+        h3.style.fontSize = "15px";
         content.appendChild(h3);
 
         const groups = groupByType(matches);
@@ -550,27 +622,32 @@ function showResultsDialog(matches, downloadResults) {
             // Category Header
             const catHeader = document.createElement("div");
             catHeader.innerText = type.toUpperCase().replace("_", " ");
-            catHeader.style.fontSize = "12px";
-            catHeader.style.color = "#aaa";
+            catHeader.style.fontSize = "11px";
+            catHeader.style.color = "#ccc";
             catHeader.style.marginTop = "10px";
-            catHeader.style.fontWeight = "bold";
-            catHeader.style.background = "rgba(255,255,255,0.05)";
+            catHeader.style.fontWeight = "700";
+            catHeader.style.background = "rgba(255,255,255,0.06)";
             catHeader.style.padding = "4px 8px";
             catHeader.style.borderRadius = "4px";
+            catHeader.style.display = "inline-block";
             content.appendChild(catHeader);
 
             const ul = document.createElement("ul");
-            ul.style.paddingLeft = "10px";
+            ul.style.paddingLeft = "0";
+            ul.style.marginTop = "8px";
             ul.style.listStyle = "none";
             items.forEach(m => {
                 const li = document.createElement("li");
-                li.style.marginTop = "8px";
+                li.style.marginTop = "6px";
                 li.style.background = "rgba(0,0,0,0.2)";
-                li.style.padding = "6px";
-                li.style.borderRadius = "4px";
+                li.style.padding = "8px 10px";
+                li.style.borderRadius = "6px";
+                li.style.border = "1px solid rgba(255,255,255,0.03)";
                 li.innerHTML = `
-                    <div style="font-size:12px; opacity:0.7; text-decoration:line-through">${m.original}</div>
-                    <div style="color:#81c784; font-weight:bold;">⬇ ${m.new_value}</div>
+                    <div style="font-size:12px; color:#aaa; text-decoration:line-through; margin-bottom:2px;">${m.original}</div>
+                    <div style="color:#a5d6a7; font-weight:600; font-size:13px; display:flex; align-items:center;">
+                        <span style="margin-right:6px;">↪</span> ${m.new_value}
+                    </div>
                 `;
                 ul.appendChild(li);
             });
@@ -581,11 +658,12 @@ function showResultsDialog(matches, downloadResults) {
     // --- Online Results Section ---
     if (downloadResults.length > 0) {
         const h3 = document.createElement("h3");
-        h3.innerText = `🌐 在线资源 (${downloadResults.length})`;
+        h3.innerHTML = `🌐 在线资源 <span style="font-size:12px; font-weight:normal; opacity:0.7">(${downloadResults.length})</span>`;
         h3.style.color = "#64b5f6";
-        h3.style.borderBottom = "1px solid #64b5f6";
-        h3.style.paddingBottom = "5px";
-        h3.style.marginTop = "20px";
+        h3.style.borderBottom = "1px solid rgba(100, 181, 246, 0.3)";
+        h3.style.paddingBottom = "6px";
+        h3.style.marginTop = "25px";
+        h3.style.fontSize = "15px";
         content.appendChild(h3);
 
         const groups = groupByType(downloadResults);
@@ -593,50 +671,56 @@ function showResultsDialog(matches, downloadResults) {
             // Category Header
             const catHeader = document.createElement("div");
             catHeader.innerText = type.toUpperCase().replace("_", " ");
-            catHeader.style.fontSize = "12px";
-            catHeader.style.color = "#aaa";
+            catHeader.style.fontSize = "11px";
+            catHeader.style.color = "#ccc";
             catHeader.style.marginTop = "10px";
-            catHeader.style.fontWeight = "bold";
-            catHeader.style.background = "rgba(255,255,255,0.05)";
+            catHeader.style.fontWeight = "700";
+            catHeader.style.background = "rgba(255,255,255,0.06)";
             catHeader.style.padding = "4px 8px";
             catHeader.style.borderRadius = "4px";
+            catHeader.style.display = "inline-block";
             content.appendChild(catHeader);
 
             const ul = document.createElement("ul");
-            ul.style.paddingLeft = "10px";
+            ul.style.paddingLeft = "0";
+            ul.style.marginTop = "8px";
             ul.style.listStyle = "none";
             items.forEach(d => {
                 const li = document.createElement("li");
-                li.style.marginTop = "8px";
+                li.style.marginTop = "6px";
                 li.style.background = "rgba(0,0,0,0.2)";
-                li.style.padding = "6px";
-                li.style.borderRadius = "4px";
+                li.style.padding = "8px 10px";
+                li.style.borderRadius = "6px";
+                li.style.border = "1px solid rgba(255,255,255,0.03)";
                 li.innerHTML = `
-                    <div style="font-weight:bold; margin-bottom:4px; color:#ffcc80">${d.original}</div>
-                    <div style="display:flex; gap:8px;">
+                    <div style="font-weight:600; margin-bottom:6px; color:#ffcc80; font-size:13px;">${d.original}</div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
                         <a href="${d.result.url}" target="_blank" style="
-                            display: inline-block;
-                            background: #2196f3;
+                            display: inline-flex;
+                            align-items: center;
+                            background: rgba(33, 150, 243, 0.85);
                             color: white;
                             text-decoration: none;
-                            padding: 4px 12px;
+                            padding: 5px 12px;
                             border-radius: 4px;
                             font-size: 12px;
+                            font-weight: 500;
                             transition: background 0.2s;
-                        ">⬇ 下载 (${d.result.source})</a>
+                        " onmouseover="this.style.background='#1976d2'" onmouseout="this.style.background='rgba(33, 150, 243, 0.85)'">⬇ 下载/Download (${d.result.source})</a>
 
                         ${d.result.pageUrl ? `
                         <a href="${d.result.pageUrl}" target="_blank" style="
-                            display: inline-block;
-                            background: #444;
+                            display: inline-flex;
+                            align-items: center;
+                            background: rgba(255, 255, 255, 0.1);
                             color: #ccc;
                             text-decoration: none;
-                            padding: 4px 12px;
-                            border: 1px solid #666;
+                            padding: 5px 12px;
+                            border: 1px solid rgba(255, 255, 255, 0.15);
                             border-radius: 4px;
                             font-size: 12px;
                             transition: all 0.2s;
-                        " onmouseover="this.style.color='white';this.style.borderColor='#999'" onmouseout="this.style.color='#ccc';this.style.borderColor='#666'">🌍 查看详情</a>
+                        " onmouseover="this.style.color='white';this.style.borderColor='#999';this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.color='#ccc';this.style.borderColor='rgba(255, 255, 255, 0.15)';this.style.background='rgba(255, 255, 255, 0.1)'">🌍 主页/Page</a>
                         ` : ''}
                     </div>
                 `;
@@ -649,51 +733,63 @@ function showResultsDialog(matches, downloadResults) {
     // --- Action Buttons ---
     const actionsBar = document.createElement("div");
     actionsBar.style.display = "flex";
-    actionsBar.style.gap = "10px";
-    actionsBar.style.marginTop = "20px";
-    actionsBar.style.borderTop = "1px solid var(--border-color)";
-    actionsBar.style.paddingTop = "10px";
+    actionsBar.style.gap = "12px";
+    actionsBar.style.marginTop = "25px";
+    actionsBar.style.borderTop = "1px solid rgba(255,255,255,0.1)";
+    actionsBar.style.paddingTop = "15px";
 
     if (matches.length > 0) {
         const confirmBtn = document.createElement("button");
-        confirmBtn.innerText = "🚀 应用所有本地修复";
+        confirmBtn.innerHTML = "🚀 应用所有本地修复";
         confirmBtn.style.cssText = `
                 flex: 2;
-                padding: 10px;
+                padding: 12px;
                 background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
                 color: white;
                 border: none;
                 border-radius: 6px;
                 cursor: pointer;
-                font-weight: bold;
+                font-weight: 600;
                 font-size: 14px;
-                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+                transition: transform 0.1s, box-shadow 0.2s;
                 `;
+        confirmBtn.onmousedown = () => confirmBtn.style.transform = "scale(0.98)";
+        confirmBtn.onmouseup = () => confirmBtn.style.transform = "scale(1)";
+
         confirmBtn.onclick = () => {
             applyFixes(matches);
-            confirmBtn.innerText = "✅ 已应用修复";
+            confirmBtn.innerHTML = "✅ 已应用 / Fixed";
             confirmBtn.disabled = true;
-            confirmBtn.style.background = "#555";
+            confirmBtn.style.background = "#444";
+            confirmBtn.style.color = "#aaa";
             confirmBtn.style.cursor = "default";
+            confirmBtn.style.boxShadow = "none";
         };
         actionsBar.appendChild(confirmBtn);
     }
 
     // 再次网络筛选按钮
     const retryBtn = document.createElement("button");
-    retryBtn.innerText = "🔄 再次网络筛选";
+    retryBtn.innerHTML = "🔄 再次网络筛选";
     retryBtn.title = "强制忽略缓存，重新搜索在线资源";
     retryBtn.style.cssText = `
                 flex: 1;
-                padding: 10px;
+                padding: 12px;
                 background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
                 color: white;
                 border: none;
                 border-radius: 6px;
                 cursor: pointer;
-                font-weight: bold;
-                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+                font-weight: 600;
+                font-size: 14px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+                white-space: nowrap;
+                transition: transform 0.1s, box-shadow 0.2s;
                 `;
+    retryBtn.onmousedown = () => retryBtn.style.transform = "scale(0.98)";
+    retryBtn.onmouseup = () => retryBtn.style.transform = "scale(1)";
+
     retryBtn.onclick = async () => {
         const modal = content.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
@@ -703,8 +799,6 @@ function showResultsDialog(matches, downloadResults) {
         }
     };
     actionsBar.appendChild(retryBtn);
-
-
 
     content.appendChild(actionsBar);
 
