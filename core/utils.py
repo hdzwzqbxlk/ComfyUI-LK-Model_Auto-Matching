@@ -690,6 +690,26 @@ class AdvancedTokenizer:
             if quant_a != quant_b:
                 return 0.0
         
+        # === 0.6 One-Sided Strict Precision Check ===
+        # 特殊精度 (bf16, fp8, int8) 必须严格匹配
+        # 如果 A 指定了 bf16，而 B 没有指定（或指定了其他的），则不匹配
+        # (fp16/fp32 较为通用，文件名常省略，故不做单侧强制)
+        STRICT_PRECISIONS = {'bf16', 'fp8', 'int8', 'int4', 'q8'}
+        
+        # Case A: Target has strict precision, Candidate missing or different
+        if quant_a in STRICT_PRECISIONS:
+            if quant_b != quant_a: 
+                # e.g. Target="x_bf16", Cand="x" (None) -> Mismatch
+                # e.g. Target="x_bf16", Cand="x_fp16" -> Mismatch (Caught above, but safe to reiterate)
+                return 0.0
+                
+        # Case B: Candidate has strict precision, Target missing
+        # e.g. Target="x", Cand="x_bf16" -> Mismatch
+        # 用户若未指定 bf16，不应给自动匹配 bf16 版本（可能显存不支持）
+        if quant_b in STRICT_PRECISIONS:
+            if quant_a != quant_b:
+                return 0.0
+        
         # === 预处理：移除仓库组织名前缀 ===
         # HuggingFace 仓库格式通常是 "org/repo-name"，例如 "unsloth/Qwen-Image-Edit-2511-GGUF"
         # 组织名对相似度匹配是噪声，应当移除

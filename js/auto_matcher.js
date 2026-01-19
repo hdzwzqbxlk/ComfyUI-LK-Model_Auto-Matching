@@ -900,12 +900,23 @@ function findMissingModels() {
                 // Condition: Value exists AND Options array exists AND Value is NOT in Options
                 if (value && options.length >= 0 && !options.includes(value)) {
 
-                    // FIX: Ignore Image Uploads (don't try to match user input images)
+                    // FIX: Ignore Image/Video/Config Uploads (don't try to match user inputs)
                     const strVal = String(value).toLowerCase();
-                    if (strVal.endsWith(".png") || strVal.endsWith(".jpg") || strVal.endsWith(".jpeg") ||
-                        strVal.endsWith(".webp") || strVal.endsWith(".bmp") || strVal.endsWith(".tiff")) {
+                    const ignoredExts = [
+                        // Images
+                        ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif",
+                        // Videos
+                        ".mp4", ".mov", ".avi", ".mkv", ".webm",
+                        // Config/Text
+                        ".txt", ".md", ".json", ".yaml", ".yml", ".ini",
+                        // Archives
+                        ".zip", ".rar", ".7z", ".tar", ".gz"
+                    ];
+
+                    if (ignoredExts.some(ext => strVal.endsWith(ext))) {
                         continue;
                     }
+
                     if (widget.name === "image" || widget.name === "upload") {
                         continue;
                     }
