@@ -13,6 +13,9 @@
 2. **Progressive Search (渐进式搜索策略)**:
    - 自动执行三级回退搜索: `Raw Stem` (精准) -> `Spaced` (常规) -> `Deep Token` (模糊)。
    - 大幅提升了冷门和复杂命名模型的召回率。
+3. **Chinese & Symbol Optimization (中英混排增强)**:
+   - **Symbol Normalization**: 自动识别并修正简写符号 (如 `F.1` -> `Flux.1`)，解决了大量 Flux 模型漏搜问题。
+   - **Hybrid Scoring**: 引入"英文核心词增强"评分机制。即使文件名包含大量中文前缀 (如 `好看的亚洲人脸F.1`)，只要英文核心 ID (`girl_flux`) 匹配，依然能获得高相似度评分 (>0.7)。
 
 ### 🛠 问题修复
 1. **HuggingFace URL 解析修复**:

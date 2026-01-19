@@ -208,6 +208,11 @@ class AdvancedTokenizer:
         # 替换常见分隔符
         for char in ['_', '-', '.', ' ', '/', '\\', '[', ']', '(', ')']:
             text = text.replace(char, ' ')
+            
+        # 0. 预处理归一化 (Global Normalization)
+        # Handle "F 1", "F.1" -> "Flux 1" (Safe regex for tokens)
+        # Use negative lookbehind (?<![a-z]) to handle "人脸f" (Chinese char is \w so \b fails)
+        text = re.sub(r'(?<![a-z])f\s*1(?![a-z0-9])', 'flux 1', text)
         
         tokens = []
         for part in text.split():
@@ -445,6 +450,20 @@ class AdvancedTokenizer:
             spaced = spaced.strip()
             if spaced and spaced.lower() not in [t.lower() for t in search_terms]:
                 search_terms.append(spaced)
+
+        # === Phase 2b: Deep Tokenization (CamelCase & AlphaNumeric Split) ===
+        # 针对 wan22RemixSFW 这种连写情况，强制拆分为 "wan 22 Remix SFW"
+        # 1. 拆分驼峰: "RemixSFW" -> "Remix SFW"
+        deep_clean = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', raw_stem)
+        # 2. 拆分数字与字母: "wan22" -> "wan 22"
+        deep_clean = re.sub(r'(?<=[a-zA-Z])(?=[0-9])|(?<=[0-9])(?=[a-zA-Z])', ' ', deep_clean)
+        # 3. 替换分隔符
+        deep_clean = re.sub(r'[-_.]+', ' ', deep_clean)
+        
+        deep_clean = deep_clean.strip()
+        if deep_clean and len(deep_clean) > 3 and deep_clean.lower() not in [t.lower() for t in search_terms]:
+             search_terms.append(deep_clean)
+        
         
         # Phase 3: Token 化版本（兜底）
         tokens = AdvancedTokenizer.tokenize(cleaned_base)
@@ -455,13 +474,35 @@ class AdvancedTokenizer:
             if space_joined.lower() not in [t.lower() for t in search_terms]:
                 search_terms.append(space_joined)
         
-        # Phase 4: 原始文件名（高精度模式）
+        # Phase 4: Chinese & Symbol Optimization (Target: "F.1" -> "Flux.1")
+        # 专门处理 "好看的亚洲人脸F.1" 这种混合+简写情况
+        
+        # 4.1 符号归一化 (Symbol Normalization)
+        # Handle "F.1", "F1", "Flux1" -> "Flux.1"
+        # 使用 (?<![a-z]) 而非 \b 以兼容中文前缀 (如 "人脸F.1")
+        optimized_base = re.sub(r'(?i)(?<![a-z])F[\.\s_-]?1(?![a-z0-9])', 'Flux.1', raw_stem)
+        
+        # 4.2 CJK 分词 (CJK Segmentation)
+        # 在中文和英文/数字之间插入空格: "人脸F" -> "人脸 F"
+        optimized_base = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', optimized_base)
+        optimized_base = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', optimized_base)
+        
+        # 4.3 清洗多余符号
+        optimized_base = re.sub(r'[-_.]+', ' ', optimized_base).strip()
+        
+        if optimized_base and len(optimized_base) > 2:
+            # 只有当优化后的词与现有词不同时才添加
+            if optimized_base.lower() not in [t.lower() for t in search_terms]:
+                # 放在比较靠前的位置 (Priority 2)
+                search_terms.insert(1, optimized_base)
+
+        # Phase 5: 原始文件名（高精度模式）
         # 始终包含原始文件名（仅替换分隔符），保留 bf16, int8 等精确标记
         # 放在最后作为精确匹配候选项
         raw_spaced = re.sub(r'[-_.]+', ' ', base_name).strip()
         if raw_spaced.lower() not in [t.lower() for t in search_terms]:
             # 如果原始名很长，可能需要在前面尝试
-            search_terms.insert(1, raw_spaced) # 插入到第二位，仅次于最干净的核心词
+            search_terms.append(raw_spaced)
 
         # === 智能去重与限制 ===
         unique_terms = []
@@ -765,6 +806,33 @@ class AdvancedTokenizer:
             core_union = len(core_a.union(core_b))
             jaccard = core_intersection / core_union if core_union > 0 else 0
             
+            # --- Chinese Optimization: Partial English Match ---
+            # 如果一侧包含中文，计算 "English-Only Jaccard"
+            # 假设中文部分只是描述，英文部分是核心 ID
+            has_cn_a = bool(re.search(r'[\u4e00-\u9fff]', processed_a))
+            has_cn_b = bool(re.search(r'[\u4e00-\u9fff]', processed_b))
+            
+            if has_cn_a or has_cn_b:
+                # 提取纯 ASCII token (只包含英文字母和数字)
+                # Helper inline function
+                def get_ascii_tokens(tokens):
+                    return {t for t in tokens if re.match(r'^[a-zA-Z0-9]+$', t)}
+                
+                ascii_a = get_ascii_tokens(core_a)
+                ascii_b = get_ascii_tokens(core_b)
+                
+                if ascii_a and ascii_b:
+                    asc_int = len(ascii_a.intersection(ascii_b))
+                    asc_union = len(ascii_a.union(ascii_b))
+                    # 只有当英文部分有显著重叠 (>=2 tokens or >50%) 时才采纳
+                    if asc_union > 0:
+                        ascii_jaccard = asc_int / asc_union
+                        # 如果英文部分匹配得更好，提升 Jaccard
+                        # 但不能完全替代 (避免 1.safetensors vs 1.ckpt 这种极端情况)
+                        if ascii_jaccard > jaccard:
+                            # 融合分数：80% English Jaccard + 20% Original
+                            jaccard = (ascii_jaccard * 0.8) + (jaccard * 0.2)
+
             # 核心词覆盖率奖励：如果较短的一侧核心词被完全覆盖，额外加分
             smaller = core_a if len(core_a) <= len(core_b) else core_b
             coverage = len(smaller.intersection(core_a & core_b)) / len(smaller) if smaller else 0
