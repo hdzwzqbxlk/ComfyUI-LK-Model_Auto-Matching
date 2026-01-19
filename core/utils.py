@@ -176,6 +176,8 @@ VARIANT_SUFFIXES = {
 # 核心功能词保护列表（如果这些词在一边有而另一边没有，则视为不同模型）
 # 注意：只保留真正关键的功能差异词，避免过度严格
 CRITICAL_TERMS = {
+    # 模型类型（必须严格区分，不同类型模型不能互相匹配）
+    'vae',  # VAE 编码器/解码器，不能与主扩散模型混淆
     # 功能变体（必须严格区分）
     'upscale', 'upscaler', 'refiner', 'detailer',
     'inpainting', 'inpaint',
@@ -277,6 +279,8 @@ class AdvancedTokenizer:
             # 量化标记
             'q4', 'q5', 'q6', 'q8', 'q3', 'bf16', 'fp16', 'fp32', 'fp8', 'int8', 'int4',
             'q4_0', 'q4_1', 'q5_0', 'q5_1', 'q8_0', 'q4_k', 'q4_k_m', 'q4_k_s', 'q5_k_m', 'q5_k_s', 'q6_k',
+            # 单字母量化后缀（量化标记残留，如 Q4_K_S 分解后的 k、s）
+            'k', 'm', 's',
             # 格式后缀
             'gguf', 'safetensors', 'ckpt', 'pt', 'bin', 'pth', 'onnx', 'pkl',
             # 训练变体
@@ -287,7 +291,6 @@ class AdvancedTokenizer:
             'sfw', 'nsfw',
             # 速度变体
             'lightning', 'turbo', 'hyper', 'lcm', 'simpo', '8steps', '4steps', '2steps',
-            # 单字母量化后缀 (k, m, s 仅在前面有 q 数字时移除，这里不单独移除)
         }
         
         # 保护的关键词（不管在哪里都保留）

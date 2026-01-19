@@ -1,8 +1,8 @@
 import server
 from aiohttp import web
-from .scanner import ModelScanner
-from .matcher import ModelMatcher
-from .searcher import ModelSearcher
+from .core.scanner import ModelScanner
+from .core.matcher import ModelMatcher
+from .core.searcher import ModelSearcher
 
 __version__ = "1.2.0"
 __author__ = "LK"

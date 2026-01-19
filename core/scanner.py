@@ -23,8 +23,8 @@ HASH_VERSION = 1  # 索引结构版本，不兼容时升级
 
 class ModelIndex:
     def __init__(self):
-        # 索引文件路径
-        self.index_file = os.path.join(os.path.dirname(__file__), "model_index.json")
+        # 索引文件路径 (保存在项目根目录，即 core 的上级目录)
+        self.index_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "model_index.json")
         self.data = {
             "version": HASH_VERSION,
             "last_scan": 0,

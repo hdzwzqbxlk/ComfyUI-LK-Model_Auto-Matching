@@ -15,7 +15,8 @@ class ModelSearcher:
         self.civitai_api = "https://civitai.com/api/v1/models"
         self.hf_api = "https://huggingface.co/api/models"
         self.modelscope_api = "https://www.modelscope.cn/api/v1/dolphin/models"
-        self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        # 配置文件路径 (保存在项目根目录，即 core 的上级目录)
+        self.config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
         self.config = self.load_config()
         
         # 搜索结果缓存 {search_term: result}
