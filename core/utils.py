@@ -543,6 +543,63 @@ class AdvancedTokenizer:
         return None
 
     @staticmethod
+    def lookup_popular_model(filename):
+        """
+        [New Feature] 查询 ComfyUI 常用/官方模型映射表
+        直接返回 HuggingFace 仓库 ID，跳过搜索
+        """
+        lower = filename.lower()
+        base = os.path.basename(lower)
+        
+        # 常见模型映射表 (文件名 -> HF Repo ID)
+        POPULAR_MAP = {
+            # Flux
+            "flux1-dev.safetensors": "black-forest-labs/FLUX.1-dev",
+            "flux1-schnell.safetensors": "black-forest-labs/FLUX.1-schnell",
+            "flux1-dev-fp8.safetensors": "Comfy-Org/flux1-dev", # ComfyOrg hosting
+            "flux1-schnell-fp8.safetensors": "Comfy-Org/flux1-schnell",
+            "ae.safetensors": "black-forest-labs/FLUX.1-dev", # Flux VAE
+            "t5xxl_fp16.safetensors": "comfyanonymous/flux_text_encoders",
+            "t5xxl_fp8_e4m3fn.safetensors": "comfyanonymous/flux_text_encoders",
+            "clip_l.safetensors": "comfyanonymous/flux_text_encoders",
+            
+            # SDXL
+            "sd_xl_base_1.0.safetensors": "stabilityai/stable-diffusion-xl-base-1.0",
+            "sd_xl_refiner_1.0.safetensors": "stabilityai/stable-diffusion-xl-refiner-1.0",
+            "sdxl_vae.safetensors": "stabilityai/sdxl-vae",
+            
+            # SD1.5
+            "v1-5-pruned-emaonly.ckpt": "runwayml/stable-diffusion-v1-5",
+            "v1-5-pruned.ckpt": "runwayml/stable-diffusion-v1-5",
+            "vae-ft-mse-840000-ema-pruned.safetensors": "stabilityai/sd-vae-ft-mse",
+            
+            # ControlNet (Common)
+            "control_v11p_sd15_canny.pth": "lllyasviel/ControlNet-v1-1",
+            "control_v11p_sd15_openpose.pth": "lllyasviel/ControlNet-v1-1",
+            "control_v11p_sd15_lineart.pth": "lllyasviel/ControlNet-v1-1",
+            "control_v11p_sd15_softedge.pth": "lllyasviel/ControlNet-v1-1",
+            
+            # Upscalers
+            "4x-ultrasharp.pth": "Kim2091/UltraSharp",
+            "4x_nmkd-siax_200k.pth": "gemasai/4x_NMKD-Siax_200k",
+            
+            # AnimateDiff
+            "mm_sd_v15_v2.ckpt": "guoyww/animatediff",
+            "mm_sd_v15_v3.safetensors": "guoyww/animatediff",
+        }
+        
+        # 1. 精确全名匹配
+        if base in POPULAR_MAP:
+            return POPULAR_MAP[base], base
+            
+        # 2. 模糊包含匹配 (保守策略)
+        # 仅针对非常独特的名称，防止误判
+        if "flux1-dev" in base and "fp8" in base:
+            return "Comfy-Org/flux1-dev", "flux1-dev-fp8"
+            
+        return None, None
+
+
     def calculate_similarity(name_a, name_b):
         """
         计算综合相似度 (Jaccard + Sequence + Semantic + Quantization)

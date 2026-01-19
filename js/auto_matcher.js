@@ -1,6 +1,8 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
+const VERSION = "1.3.1";
+
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
     async setup() {
@@ -78,7 +80,6 @@ app.registerExtension({
         });
 
         // --- Logo / Title ---
-        const VERSION = "1.3.0";  // 版本号 - 推送前必须与 __init__.py 同步
         const titleSpan = document.createElement("span");
         titleSpan.innerHTML = `<span style="color: #64b5f6; font-weight: 800;">LK</span> Auto Match <span style="color: #888; font-size: 11px;">v${VERSION}</span>`;
         titleSpan.style.fontSize = "14px";
@@ -212,8 +213,30 @@ async function showSettingsDialog() {
     content.style.width = "400px";
     content.style.fontFamily = "sans-serif";
 
+    // 添加右上角关闭按钮
+    const closeBtn = document.createElement("button");
+    closeBtn.innerText = "✕";
+    closeBtn.style.cssText = `
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: transparent;
+        border: none;
+        color: #888;
+        font-size: 18px;
+        cursor: pointer;
+        z-index: 10;
+    `;
+    closeBtn.onmouseenter = () => closeBtn.style.color = "white";
+    closeBtn.onmouseleave = () => closeBtn.style.color = "#888";
+    closeBtn.onclick = () => {
+        const modal = content.closest(".comfy-modal");
+        if (modal) modal.style.display = "none";
+    };
+    content.appendChild(closeBtn);
+
     const h3 = document.createElement("h3");
-    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">v1.2.0</span>`;
+    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:12px; color:#666; font-weight:normal; margin-left:8px;">v${VERSION}</span>`;
     h3.style.color = "#eee";
     h3.style.marginTop = "0";
     content.appendChild(h3);
@@ -471,11 +494,35 @@ function showResultsDialog(matches, downloadResults) {
     }
 
     const content = document.createElement("div");
+    content.style.position = "relative"; // Ensure absolute positioning works for children
     content.style.padding = "10px";
     content.style.fontFamily = "sans-serif";
     content.style.minWidth = "400px";
     content.style.maxHeight = "80vh";
     content.style.overflowY = "auto";
+
+    // 添加右上角关闭按钮 X
+    const xBtn = document.createElement("button");
+    xBtn.innerText = "✕";
+    xBtn.style.cssText = `
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: transparent;
+        border: none;
+        color: #888;
+        font-size: 18px;
+        cursor: pointer;
+        z-index: 10;
+        padding: 5px;
+    `;
+    xBtn.onmouseenter = () => xBtn.style.color = "white";
+    xBtn.onmouseleave = () => xBtn.style.color = "#888";
+    xBtn.onclick = () => {
+        const modal = content.closest(".comfy-modal");
+        if (modal) modal.style.display = "none";
+    };
+    content.appendChild(xBtn);
 
     // Helper to group items by type
     const groupByType = (items) => {
@@ -657,22 +704,7 @@ function showResultsDialog(matches, downloadResults) {
     };
     actionsBar.appendChild(retryBtn);
 
-    // 关闭按钮
-    const closeBtn = document.createElement("button");
-    closeBtn.innerText = "关闭";
-    closeBtn.style.cssText = `
-                padding: 10px 20px;
-                background: #444;
-                color: white;
-                border: 1px solid #666;
-                border-radius: 6px;
-                cursor: pointer;
-                `;
-    closeBtn.onclick = () => {
-        const modal = content.closest(".comfy-modal");
-        if (modal) modal.style.display = "none";
-    };
-    actionsBar.appendChild(closeBtn);
+
 
     content.appendChild(actionsBar);
 

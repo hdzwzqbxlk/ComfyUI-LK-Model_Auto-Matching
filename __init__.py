@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 __author__ = "LK"
 
 # 初始化核心组件
