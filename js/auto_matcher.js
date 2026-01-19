@@ -490,13 +490,29 @@ async function runAutoMatch(btn, ignoreCache = false) {
         const matchResult = await matchResponse.json();
         const matches = matchResult.matches || [];
 
-        // 3. 计算最终未找到的项目
-        const downloadIds = new Set(downloadResults.map(d => d.original)); // Use original filename as key if ID not available
-        // Need to map back to original items to get IDs if possible, but matching by name is safer here
+        // 2. 在线搜索 (针对本地未匹配的项目)
+        const matchedNames = new Set(matches.map(m => m.original));
+        const stillMissing = missingItems.filter(item => !matchedNames.has(item.current));
 
-        // Items that were in 'stillMissing' but NOT in 'downloadResults'
-        const foundNames = new Set(downloadResults.map(d => d.original));
-        const unmatched = stillMissing.filter(item => !foundNames.has(item.current));
+        // Update button text to show progress
+        if (stillMissing.length > 0) {
+            btn.innerHTML = `🌍 Searching online (${stillMissing.length})...`;
+        }
+
+        let downloadResults = [];
+        if (stillMissing.length > 0) {
+            downloadResults = await searchMissingModels(stillMissing, ignoreCache);
+        }
+
+        // 3. 计算最终未找到的项目
+        // Items found locally
+        const foundLocally = new Set(matches.map(m => m.original));
+        // Items found online
+        const foundOnline = new Set(downloadResults.map(d => d.original));
+
+        const unmatched = missingItems.filter(item =>
+            !foundLocally.has(item.current) && !foundOnline.has(item.current)
+        );
 
         showResultsDialog(matches, downloadResults, unmatched);
 
@@ -507,6 +523,28 @@ async function runAutoMatch(btn, ignoreCache = false) {
         btn.innerHTML = originalHTML;
         btn.disabled = false;
         btn.style.cursor = "pointer";
+    }
+}
+
+// Helper to search missing models online
+async function searchMissingModels(missingItems, ignoreCache = false) {
+    if (!missingItems || missingItems.length === 0) return [];
+
+    try {
+        const response = await api.fetchApi("/auto-matcher/search", {
+            method: "POST",
+            body: JSON.stringify({
+                items: missingItems,
+                ignore_cache: ignoreCache
+            }),
+            headers: { "Content-Type": "application/json" }
+        });
+
+        const result = await response.json();
+        return result.downloads || [];
+    } catch (e) {
+        console.error("Search API failed:", e);
+        return [];
     }
 }
 
