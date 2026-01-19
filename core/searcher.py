@@ -282,7 +282,10 @@ class GoogleOmniProvider(BaseProvider):
         if "civitai.com/models/" in url:
             source = "Civitai (Google)"
             name = "Civitai Model"
-        elif "huggingface.co" in url and "blob" not in url:
+        elif "huggingface.co" in url:
+            # Allow blob if it is a model file
+            if "blob" in url and not any(ext in url for ext in [".safetensors", ".gguf", ".pt", ".pth", ".bin", ".onnx"]):
+                return None
             source = "HuggingFace (Google)"
             name = url.split("huggingface.co/")[-1].split("/")[0]
         elif "modelscope.cn/models" in url:
