@@ -109,7 +109,8 @@ class ModelSearcher:
 
     async def search(self, filename, ignore_cache=False):
         """
-        搜索模型下载链接 (带缓存)
+        搜索模型下载链接 (带缓存) - 优化版 v2
+        并发搜索所有平台，包括 Google
         """
         if not filename: return None
         
@@ -140,11 +141,12 @@ class ModelSearcher:
         print(f"[AutoModelMatcher] 正在搜索: {filename}")
         print(f"[AutoModelMatcher] 候选搜索词: {search_terms}")
         
-        # 2. 并发搜索三个平台
+        # 2. 并发搜索所有平台 (包括 Google，不再等待其他源失败)
         tasks = [
             self._search_civitai_multi(search_terms, base_name),
             self._search_hf_multi(search_terms, base_name),
             self._search_modelscope_multi(search_terms, base_name),
+            self._search_google_html(search_terms[0] if search_terms else base_name, base_name),
         ]
         
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -152,33 +154,38 @@ class ModelSearcher:
         civitai_res = results[0] if not isinstance(results[0], Exception) else None
         hf_res = results[1] if not isinstance(results[1], Exception) else None
         modelscope_res = results[2] if not isinstance(results[2], Exception) else None
+        google_res = results[3] if not isinstance(results[3], Exception) else None
+        
+        # 3. 收集所有有效结果并按分数排序
+        candidates = []
+        if civitai_res:
+            civitai_res["_source_priority"] = 1  # 最高优先级
+            candidates.append(civitai_res)
+        if hf_res:
+            hf_res["_source_priority"] = 2
+            candidates.append(hf_res)
+        if modelscope_res:
+            modelscope_res["_source_priority"] = 3
+            candidates.append(modelscope_res)
+        if google_res:
+            google_res["_source_priority"] = 4
+            candidates.append(google_res)
         
         final_result = None
-        
-        # 3. 优先级策略
-        if civitai_res:
-            print(f"[AutoModelMatcher] ✓ Civitai 命中: {civitai_res.get('name')}")
-            final_result = civitai_res
-        elif hf_res:
-            print(f"[AutoModelMatcher] ✓ HuggingFace 命中: {hf_res.get('name')}")
-            final_result = hf_res
-        elif modelscope_res:
-            print(f"[AutoModelMatcher] ✓ ModelScope 命中: {modelscope_res.get('name')}")
-            final_result = modelscope_res
+        if candidates:
+            # 按分数排序（分数相同时按源优先级）
+            candidates.sort(key=lambda x: (-x.get("score", 0), x.get("_source_priority", 99)))
+            final_result = candidates[0]
+            # 清理临时字段
+            final_result.pop("_source_priority", None)
+            print(f"[AutoModelMatcher] ✓ 最佳匹配: {final_result.get('name')} (score={final_result.get('score', 0):.2f}, source={final_result.get('source')})")
         else:
-            # 4. Google 终极兜底 (如果前面都失败)
-            print(f"[AutoModelMatcher] 尝试 Google 终极搜索...")
-            # 只用第一个最有希望的搜索词
-            google_res = await self._search_google_html(search_terms[0], base_name)
-            if google_res:
-                print(f"[AutoModelMatcher] ✓ Google Search 命中: {google_res.get('name')}")
-                final_result = google_res
-            else:
-                print(f"[AutoModelMatcher] ✗ 未找到匹配: {filename}")
+            print(f"[AutoModelMatcher] ✗ 未找到匹配: {filename}")
         
         # 写入缓存 (即使是 None 也缓存，避免重复无效搜索)
         self.search_cache[filename] = final_result
         return final_result
+
 
     async def _search_modelscope_multi(self, search_terms, original_base_name):
         for term in search_terms:

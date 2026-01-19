@@ -1,6 +1,14 @@
 import re
 import os
 
+# 尝试导入 rapidfuzz (高性能模糊匹配库)
+try:
+    from rapidfuzz import fuzz as rf_fuzz
+    from rapidfuzz import process as rf_process
+    USE_RAPIDFUZZ = True
+except ImportError:
+    USE_RAPIDFUZZ = False
+
 # 噪声后缀词（仅过滤纯技术后缀，不过滤版本号和模型组件名）
 NOISE_SUFFIXES = {
     # 精度格式
@@ -622,9 +630,18 @@ class AdvancedTokenizer:
                 jaccard = min(1.0, jaccard + 0.15)
         
         # 3. Sequence Similarity (用于捕捉顺序和部分匹配)
-        import difflib
-        matcher = difflib.SequenceMatcher(None, processed_a.lower(), processed_b.lower())
-        seq_ratio = matcher.ratio()
+        # 使用 rapidfuzz 加速（比 difflib 快 10-100x）
+        if USE_RAPIDFUZZ:
+            # rapidfuzz.fuzz.ratio 返回 0-100 的分数
+            seq_ratio = rf_fuzz.ratio(processed_a.lower(), processed_b.lower()) / 100.0
+            # 额外使用 token_set_ratio 捕捉词汇重排序匹配
+            token_ratio = rf_fuzz.token_set_ratio(processed_a.lower(), processed_b.lower()) / 100.0
+            seq_ratio = max(seq_ratio, token_ratio)
+        else:
+            import difflib
+            matcher = difflib.SequenceMatcher(None, processed_a.lower(), processed_b.lower())
+            seq_ratio = matcher.ratio()
         
         # 加权平均: Token 相似度通常更重要，因为文件名可能有无关前缀/后缀
         return (jaccard * 0.7) + (seq_ratio * 0.3)
+
