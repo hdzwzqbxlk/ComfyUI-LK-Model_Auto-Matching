@@ -2,12 +2,9 @@ import re
 import os
 
 # 尝试导入 rapidfuzz (高性能模糊匹配库)
-try:
-    from rapidfuzz import fuzz as rf_fuzz
-    from rapidfuzz import process as rf_process
-    USE_RAPIDFUZZ = True
-except ImportError:
-    USE_RAPIDFUZZ = False
+from rapidfuzz import fuzz as rf_fuzz
+from rapidfuzz import process as rf_process
+USE_RAPIDFUZZ = True
 
 # 噪声后缀词（仅过滤纯技术后缀，不过滤版本号和模型组件名）
 NOISE_SUFFIXES = {
@@ -445,10 +442,13 @@ class AdvancedTokenizer:
             if space_joined.lower() not in [t.lower() for t in search_terms]:
                 search_terms.append(space_joined)
         
-        # Phase 4: 原始文件名兜底
-        if not search_terms:
-            raw_spaced = re.sub(r'[-_.]+', ' ', base_name).strip()
-            search_terms.append(raw_spaced)
+        # Phase 4: 原始文件名（高精度模式）
+        # 始终包含原始文件名（仅替换分隔符），保留 bf16, int8 等精确标记
+        # 放在最后作为精确匹配候选项
+        raw_spaced = re.sub(r'[-_.]+', ' ', base_name).strip()
+        if raw_spaced.lower() not in [t.lower() for t in search_terms]:
+            # 如果原始名很长，可能需要在前面尝试
+            search_terms.insert(1, raw_spaced) # 插入到第二位，仅次于最干净的核心词
 
         # === 智能去重与限制 ===
         unique_terms = []
@@ -600,9 +600,53 @@ class AdvancedTokenizer:
         return None, None
 
 
+    @staticmethod
+    def _check_flux_compatibility(name_a, name_b):
+        """
+        验证 Flux 模型兼容性
+        Dev 与 Schnell 互斥
+        """
+        a = name_a.lower()
+        b = name_b.lower()
+        
+        is_dev_a = "dev" in a
+        is_schnell_a = "schnell" in a
+        
+        is_dev_b = "dev" in b
+        is_schnell_b = "schnell" in b
+        
+        # 如果两边都明确指定了类型，必须一致
+        if (is_dev_a or is_schnell_a) and (is_dev_b or is_schnell_b):
+            if is_dev_a and not is_dev_b: return False
+            if is_schnell_a and not is_schnell_b: return False
+            
+        return True
+
+    @staticmethod
+    def _check_sdxl_compatibility(name_a, name_b):
+        """
+        验证 SDXL 模型兼容性
+        Base 与 Refiner 互斥
+        """
+        a = name_a.lower()
+        b = name_b.lower()
+        
+        is_base_a = "base" in a
+        is_refiner_a = "refiner" in a
+        
+        is_base_b = "base" in b
+        is_refiner_b = "refiner" in b
+        
+        if (is_base_a or is_refiner_a) and (is_base_b or is_refiner_b):
+            if is_base_a and not is_base_b: return False
+            if is_refiner_a and not is_refiner_b: return False
+            
+        return True
+
+    @staticmethod
     def calculate_similarity(name_a, name_b):
         """
-        计算综合相似度 (Jaccard + Sequence + Semantic + Quantization)
+        计算综合相似度 (Smart Rules + Jaccard + RapidFuzz)
         """
         if not name_a or not name_b: return 0.0
         
@@ -613,16 +657,25 @@ class AdvancedTokenizer:
         if base_a != "unknown" and base_b != "unknown":
             if base_a != base_b:
                 return 0.0
+        
+        # === 0.1 Strict Flux Compatibility Check ===
+        if base_a == "flux" and base_b == "flux":
+            if not AdvancedTokenizer._check_flux_compatibility(name_a, name_b):
+                return 0.0
+
+        # === 0.2 Strict SDXL Compatibility Check ===
+        if base_a == "sdxl" and base_b == "sdxl":
+             if not AdvancedTokenizer._check_sdxl_compatibility(name_a, name_b):
+                return 0.0
 
         # === 0.5 Quantization/Precision Check (The "Strict" Filter) ===
         quant_a = AdvancedTokenizer.detect_quantization(name_a)
         quant_b = AdvancedTokenizer.detect_quantization(name_b)
         
         # 特殊处理 GGUF 仓库级匹配：
-        # 如果候选名以 "-GGUF" 结尾（常见的 HuggingFace GGUF 仓库命名），
-        # 且不含具体量化标记，则视为"通配"仓库，包含所有量化变体
-        # e.g. "Qwen-Image-Edit-2511-GGUF" 仓库包含 Q4_K_S, Q8_0 等多个变体
         name_a_upper = name_a.upper()
+        name_b_upper = name_b.upper()
+        # ... (rest of old code below) ...
         name_b_upper = name_b.upper()
         is_gguf_repo_a = (name_a_upper.endswith("-GGUF") or "/GGUF" in name_a_upper) and not quant_a
         is_gguf_repo_b = (name_b_upper.endswith("-GGUF") or "/GGUF" in name_b_upper) and not quant_b
@@ -688,16 +741,12 @@ class AdvancedTokenizer:
         
         # 3. Sequence Similarity (用于捕捉顺序和部分匹配)
         # 使用 rapidfuzz 加速（比 difflib 快 10-100x）
-        if USE_RAPIDFUZZ:
-            # rapidfuzz.fuzz.ratio 返回 0-100 的分数
-            seq_ratio = rf_fuzz.ratio(processed_a.lower(), processed_b.lower()) / 100.0
-            # 额外使用 token_set_ratio 捕捉词汇重排序匹配
-            token_ratio = rf_fuzz.token_set_ratio(processed_a.lower(), processed_b.lower()) / 100.0
-            seq_ratio = max(seq_ratio, token_ratio)
-        else:
-            import difflib
-            matcher = difflib.SequenceMatcher(None, processed_a.lower(), processed_b.lower())
-            seq_ratio = matcher.ratio()
+
+        # rapidfuzz.fuzz.ratio 返回 0-100 的分数
+        seq_ratio = rf_fuzz.ratio(processed_a.lower(), processed_b.lower()) / 100.0
+        # 额外使用 token_set_ratio 捕捉词汇重排序匹配
+        token_ratio = rf_fuzz.token_set_ratio(processed_a.lower(), processed_b.lower()) / 100.0
+        seq_ratio = max(seq_ratio, token_ratio)
         
         # 加权平均: Token 相似度通常更重要，因为文件名可能有无关前缀/后缀
         return (jaccard * 0.7) + (seq_ratio * 0.3)

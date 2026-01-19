@@ -490,34 +490,15 @@ async function runAutoMatch(btn, ignoreCache = false) {
         const matchResult = await matchResponse.json();
         const matches = matchResult.matches || [];
 
-        // 2. 筛选出仍然未匹配的项目
-        const matchedIds = new Set(matches.map(m => m.id));
-        const stillMissing = missingItems.filter(item => !matchedIds.has(item.id));
+        // 3. 计算最终未找到的项目
+        const downloadIds = new Set(downloadResults.map(d => d.original)); // Use original filename as key if ID not available
+        // Need to map back to original items to get IDs if possible, but matching by name is safer here
 
-        let downloadResults = [];
-        if (stillMissing.length > 0) {
-            btn.innerHTML = `🌐 Searching...`;
+        // Items that were in 'stillMissing' but NOT in 'downloadResults'
+        const foundNames = new Set(downloadResults.map(d => d.original));
+        const unmatched = stillMissing.filter(item => !foundNames.has(item.current));
 
-            // 去重
-            const uniqueMissing = [];
-            const seenNames = new Set();
-            for (const item of stillMissing) {
-                if (!seenNames.has(item.current)) {
-                    uniqueMissing.push(item);
-                    seenNames.add(item.current);
-                }
-            }
-
-            const searchResponse = await api.fetchApi("/auto-matcher/search", {
-                method: "POST",
-                body: JSON.stringify({ items: uniqueMissing, ignore_cache: ignoreCache }),
-                headers: { "Content-Type": "application/json" }
-            });
-            const searchData = await searchResponse.json();
-            downloadResults = searchData.downloads || [];
-        }
-
-        showResultsDialog(matches, downloadResults);
+        showResultsDialog(matches, downloadResults, unmatched);
 
     } catch (err) {
         console.error("Auto Match Error:", err);
@@ -529,8 +510,8 @@ async function runAutoMatch(btn, ignoreCache = false) {
     }
 }
 
-function showResultsDialog(matches, downloadResults) {
-    if (matches.length === 0 && downloadResults.length === 0) {
+function showResultsDialog(matches, downloadResults, unmatched = []) {
+    if (matches.length === 0 && downloadResults.length === 0 && unmatched.length === 0) {
         app.ui.dialog.show("🤷‍♂️ 无匹配结果\n本地未找到替代文件，在线搜索也未命中。建议手动核对 Civitai/HuggingFace。");
         return;
     }
@@ -547,6 +528,15 @@ function showResultsDialog(matches, downloadResults) {
     content.style.boxShadow = "0 10px 40px rgba(0,0,0,0.6)";
     content.style.border = "1px solid rgba(255,255,255,0.08)";
     content.style.color = "#eee";
+
+    // --- HACK: Hide Default Close Button ---
+    // Inject a style that hides the button immediately following our content's parent
+    const style = document.createElement("style");
+    style.innerHTML = `
+        .comfy-modal-content > button { display: none !important; } 
+    `;
+    content.appendChild(style);
+
 
     // 添加右上角关闭按钮 X
     const xBtn = document.createElement("button");
@@ -586,7 +576,7 @@ function showResultsDialog(matches, downloadResults) {
     content.appendChild(xBtn);
 
     // Header logic
-    const totalCount = matches.length + downloadResults.length;
+    const totalCount = matches.length + downloadResults.length + unmatched.length;
     const h2 = document.createElement("h2");
     h2.innerText = `Auto Match Results (${totalCount})`;
     h2.style.margin = "0 0 15px 0";
@@ -724,6 +714,53 @@ function showResultsDialog(matches, downloadResults) {
                         ` : ''}
                     </div>
                 `;
+                ul.appendChild(li);
+            });
+            content.appendChild(ul);
+        }
+    }
+
+    // --- Unmatched Section (New) ---
+    if (unmatched.length > 0) {
+        const h3 = document.createElement("h3");
+        h3.innerHTML = `❌ 未找到 <span style="font-size:12px; font-weight:normal; opacity:0.7">(${unmatched.length})</span>`;
+        h3.style.color = "#ef5350";
+        h3.style.borderBottom = "1px solid rgba(239, 83, 80, 0.3)";
+        h3.style.paddingBottom = "6px";
+        h3.style.marginTop = "25px";
+        h3.style.fontSize = "15px";
+        content.appendChild(h3);
+
+        const groups = groupByType(unmatched);
+        for (const [type, items] of Object.entries(groups)) {
+            // Category Header
+            const catHeader = document.createElement("div");
+            catHeader.innerText = type.toUpperCase().replace("_", " ");
+            catHeader.style.fontSize = "11px";
+            catHeader.style.color = "#ccc";
+            catHeader.style.marginTop = "10px";
+            catHeader.style.fontWeight = "700";
+            catHeader.style.background = "rgba(255,255,255,0.06)";
+            catHeader.style.padding = "4px 8px";
+            catHeader.style.borderRadius = "4px";
+            catHeader.style.display = "inline-block";
+            content.appendChild(catHeader);
+
+            const ul = document.createElement("ul");
+            ul.style.paddingLeft = "0";
+            ul.style.marginTop = "8px";
+            ul.style.listStyle = "none";
+            items.forEach(u => {
+                const li = document.createElement("li");
+                li.style.marginTop = "6px";
+                li.style.background = "rgba(255, 0, 0, 0.1)"; // Slight red tint
+                li.style.padding = "8px 10px";
+                li.style.borderRadius = "6px";
+                li.style.border = "1px solid rgba(239, 83, 80, 0.15)";
+                li.innerHTML = `
+                     <div style="font-weight:600; color:#ffcdd2; font-size:13px; word-break:break-all;">${u.current}</div>
+                     <div style="font-size:11px; color:#aaa; margin-top:4px;">⚠️ 搜遍全网也没找到，请检查文件名拼写。</div>
+                 `;
                 ul.appendChild(li);
             });
             content.appendChild(ul);
