@@ -312,6 +312,93 @@ class GoogleOmniProvider(BaseProvider):
             "score": score
         }
 
+class DuckDuckGoProvider(BaseProvider):
+    """
+    Search multiple platforms via DuckDuckGo HTML version.
+    This is much more robust against blocking than Google scraping.
+    """
+    def __init__(self, config):
+        super().__init__(config)
+        self.impersonate = None # DDG HTML doesn't need chrome impersonation, just standard headers
+        
+    async def search(self, query, original_filename):
+        results = []
+        try:
+            # Combined query targeting known sites
+            sites = "site:liblib.art OR site:shakker.ai OR site:civitai.com OR site:huggingface.co OR site:modelscope.cn"
+            full_query = f"{query} ({sites})"
+            
+            print(f"[DuckDuckGo] Searching: {full_query}")
+            
+            url = "https://html.duckduckgo.com/html/"
+            data = {"q": full_query}
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                "Referer": "https://html.duckduckgo.com/"
+            }
+            
+            async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
+                response = await session.post(url, data=data)
+                if response.status_code != 200: 
+                    print(f"[DuckDuckGo] Status {response.status_code}")
+                    return []
+                
+                html = response.text
+                selector = Selector(text=html)
+                
+                # DDG HTML results
+                # div.result -> a.result__a (title), a.result__url (url)
+                result_divs = selector.css('div.result')
+                
+                original_lower = original_filename.lower()
+                
+                for div in result_divs:
+                    raw_url = div.css('a.result__a::attr(href)').get()
+                    if not raw_url: continue
+                    
+                    decoded_url = urllib.parse.unquote(raw_url)
+                    if not decoded_url.startswith("http"): continue
+                    
+                    meta = self._parse_link(decoded_url, original_lower)
+                    if meta and meta["score"] > 0.35:
+                        results.append(meta)
+                            
+        except Exception as e:
+            print(f"[DuckDuckGo] Error: {e}")
+        return results
+
+    def _parse_link(self, url, original_lower):
+        # Reuse logic from GoogleOmniProvider via helper or copy
+        # For now, duplicate standard parsing logic for self-containment
+        name = "Online Model"
+        source = "DuckDuckGo"
+        url_lower = url.lower()
+        
+        if "civitai.com/models/" in url_lower:
+            source = "Civitai (DDG)"; name = "Civitai Model"
+        elif "huggingface.co" in url_lower:
+            if "blob" in url_lower and not any(ext in url_lower for ext in [".safetensors", ".gguf", ".pt", ".pth", ".bin", ".onnx"]): return None
+            source = "HuggingFace (DDG)"; name = url_lower.split("huggingface.co/")[-1].split("/")[0]
+        elif "modelscope.cn/models" in url_lower:
+            source = "ModelScope (DDG)"; name = "ModelScope Model"
+        elif "liblib.art" in url_lower:
+            source = "Liblib (DDG)"; name = "Liblib Model"
+        elif "shakker.ai" in url_lower:
+            source = "Shakker (DDG)"; name = "Shakker Model"
+        else: return None
+
+        score = AdvancedTokenizer.calculate_similarity(original_lower, urllib.parse.unquote(url_lower))
+        
+        return {
+            "source": source,
+            "name": name,
+            "filename": "Direct Link (Click to Visit)",
+            "url": urllib.parse.unquote(url),
+            "pageUrl": urllib.parse.unquote(url),
+            "score": score
+        }
+
 class ModelSearcher:
     def __init__(self):
         self.config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
@@ -322,7 +409,8 @@ class ModelSearcher:
             CivitaiProvider(self.config),
             HuggingFaceProvider(self.config),
             ModelScopeProvider(self.config),
-            GoogleOmniProvider(self.config)
+            GoogleOmniProvider(self.config),
+            DuckDuckGoProvider(self.config)
         ]
 
     def load_config(self):

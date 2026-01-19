@@ -258,7 +258,7 @@ async function showSettingsDialog() {
     content.appendChild(closeBtn);
 
     const h3 = document.createElement("h3");
-    h3.innerHTML = `⚙️ 插件设置 <span style="font-size:11px; color:#888; font-weight:normal; margin-left:6px; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">v${VERSION}</span>`;
+    h3.innerHTML = `⚙️ 插件设置`;
     h3.style.color = "#eee";
     h3.style.marginTop = "0";
     h3.style.marginBottom = "5px";

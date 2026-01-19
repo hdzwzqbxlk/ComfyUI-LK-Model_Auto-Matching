@@ -390,6 +390,19 @@ class AdvancedTokenizer:
         ext_lower = ext.lower()
         normalized_name = base_name.lower()
         
+        # === Phase 0: 原始文件名优先 (Direct Search Optimization) ===
+        # 用户反馈表明这对 Google 搜索最有效
+        # 保留原始标点符号 (. - _)
+        raw_stem = base_name.strip()
+        
+        # GGUF 特殊补全：如果文件名是 GGUF 但不含 gguf 关键字，加上它
+        if ext_lower == '.gguf' and 'gguf' not in raw_stem.lower():
+             raw_search = f"{raw_stem} gguf"
+        else:
+             raw_search = raw_stem
+             
+        search_terms.append(raw_search)
+
         # === 特殊处理：GGUF 文件 ===
         # GGUF 仓库命名规则：通常是 "模型名-GGUF"，如 "Qwen-Image-Edit-2511-GGUF"
         if ext_lower == '.gguf':
