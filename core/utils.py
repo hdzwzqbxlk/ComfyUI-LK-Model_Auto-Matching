@@ -178,15 +178,15 @@ VARIANT_SUFFIXES = {
 CRITICAL_TERMS = {
     # 模型类型（必须严格区分，不同类型模型不能互相匹配）
     'vae',  # VAE 编码器/解码器，不能与主扩散模型混淆
+    'lora',  # LoRA 不能与主模型混淆
     # 功能变体（必须严格区分）
     'upscale', 'upscaler', 'refiner', 'detailer',
     'inpainting', 'inpaint',
+    # 加速 LoRA 关键词（Lightning/Turbo/LCM 等是特殊变体，不能与原始模型混淆）
+    'lightning', 'turbo', 'lcm', 'hyper',
+    '4steps', '8steps', '2steps', '1step',
     # ControlNet 类型（必须严格区分）
     'depth', 'canny', 'openpose', 'softedge', 'scribble', 'hed', 'mlsd', 'normalbae', 'seg', 'lineart',
-    # 注意：lora/video/motion/animate 已移除，因为：
-    # - lora 版本通常可以匹配到基座模型仓库
-    # - video 会导致 svd vs stable-video-diffusion 误判
-    # - 这些词的存在不代表根本性的模型差异
 }
 
 class AdvancedTokenizer:
@@ -372,71 +372,86 @@ class AdvancedTokenizer:
     @staticmethod
     def extract_search_terms(filename):
         """
-        从文件名中提取多个候选搜索词（智能提取算法 - 优化版）
-        优化策略：核心清洗词优先，限制候选数量，智能去重
+        从文件名中提取多个候选搜索词（智能提取算法 - 优化版 v2）
+        
+        关键改进：
+        1. GGUF 文件优先生成 "模型名-GGUF" 格式的搜索词
+        2. 保留中文字符
+        3. 保留原始连字符格式
         """
         search_terms = []
         name_only = os.path.basename(filename)
-        base_name, _ = os.path.splitext(name_only)
+        base_name, ext = os.path.splitext(name_only)
+        ext_lower = ext.lower()
         normalized_name = base_name.lower()
         
-        # === Phase 1: 核心清洗词 (最高优先级) ===
-        # 先进行智能清洗，移除所有技术后缀
+        # === 特殊处理：GGUF 文件 ===
+        # GGUF 仓库命名规则：通常是 "模型名-GGUF"，如 "Qwen-Image-Edit-2511-GGUF"
+        if ext_lower == '.gguf':
+            # 移除量化标记 (Q4_K_S, Q8_0 等) 但保留模型核心名
+            # 量化标记通常在最后，格式为 -Q{数字}_{字母}_{字母} 或 -Q{数字}_{数字}
+            core_name = re.sub(r'[-_]Q\d+[_A-Z0-9]*$', '', base_name, flags=re.IGNORECASE)
+            
+            # 首选搜索词：模型名-GGUF
+            gguf_search = f"{core_name}-GGUF"
+            search_terms.append(gguf_search)
+            
+            # 备选：原始模型名（不含量化和 GGUF）
+            search_terms.append(core_name)
+            
+            # 降级：使用连字符分隔的核心词
+            core_tokens = [t for t in re.split(r'[-_]', core_name) if t]
+            if core_tokens:
+                search_terms.append(' '.join(core_tokens))
+        
+        # === 通用处理 ===
+        # Phase 1: 保留原始格式（包含中文）的清洗版本
+        # 只移除量化标记，保留连字符和中文
         cleaned_base = AdvancedTokenizer._strip_variant_terms(name_only)
         
-        # 策略 A: 清洗后的空格分隔版本（首选）
+        if cleaned_base and cleaned_base not in [t.lower() for t in search_terms]:
+            # 保留原始连字符格式
+            clean_hyphen = re.sub(r'\s+', '-', cleaned_base.strip())
+            search_terms.append(clean_hyphen)
+            
+            # 原始格式（保留中文）
+            search_terms.append(cleaned_base)
+        
+        # Phase 2: 中文+英文混合处理
+        # 对于包含中文的文件名，提供完整的原始格式
+        if re.search(r'[\u4e00-\u9fff]', base_name):
+            # 替换分隔符为空格，保留中文
+            spaced = re.sub(r'[-_.]+', ' ', base_name)
+            # 移除量化标记
+            spaced = re.sub(r'\s+Q\d+[_A-Z0-9]*\s*$', '', spaced, flags=re.IGNORECASE)
+            spaced = spaced.strip()
+            if spaced and spaced.lower() not in [t.lower() for t in search_terms]:
+                search_terms.append(spaced)
+        
+        # Phase 3: Token 化版本（兜底）
         tokens = AdvancedTokenizer.tokenize(cleaned_base)
-        # 二次过滤噪声词
         final_tokens = [t for t in tokens if t not in NOISE_SUFFIXES]
         
         if final_tokens:
-            # 首选：干净的空格分隔核心词
             space_joined = " ".join(final_tokens)
-            search_terms.append(space_joined)
-            
-            # 策略 B: 下划线版本（部分 API 偏好）
-            underscore_joined = "_".join(final_tokens)
-            if underscore_joined != space_joined:
-                search_terms.append(underscore_joined)
+            if space_joined.lower() not in [t.lower() for t in search_terms]:
+                search_terms.append(space_joined)
         
-        # === Phase 2: 模型模式匹配 ===
-        for pattern_str, replacement in MODEL_PATTERNS.items():
-            if re.search(pattern_str, normalized_name):
-                if replacement not in search_terms:
-                    search_terms.append(replacement)
-        
-        # === Phase 3: 清洗后的原始格式 (保留连字符/下划线) ===
-        if cleaned_base and cleaned_base != normalized_name:
-            clean_str = re.sub(r'^[\-_.\s]+|[\-_.\s]+$', '', cleaned_base.strip())
-            if clean_str and clean_str not in search_terms:
-                search_terms.append(clean_str)
-        
-        # === Phase 4: 核心词截断（降级策略）===
-        if len(final_tokens) > 3:
-            truncated = " ".join(final_tokens[:3])
-            if truncated not in search_terms:
-                search_terms.append(truncated)
-        if len(final_tokens) > 2:
-            truncated = " ".join(final_tokens[:2])
-            if truncated not in search_terms:
-                search_terms.append(truncated)
-        
-        # === Phase 5: 原始文件名 (最低优先级兜底) ===
-        # 仅当前面策略都失败时使用
+        # Phase 4: 原始文件名兜底
         if not search_terms:
-            raw_spaced = re.sub(r'[\-_.]+', ' ', base_name).strip()
+            raw_spaced = re.sub(r'[-_.]+', ' ', base_name).strip()
             search_terms.append(raw_spaced)
 
         # === 智能去重与限制 ===
         unique_terms = []
         seen = set()
         for term in search_terms:
-            t = term.strip().lower()  # 统一小写比较
-            if t and t not in seen:
+            t = term.strip().lower()
+            if t and t not in seen and len(t) > 1:  # 过滤太短的词
                 seen.add(t)
-                unique_terms.append(term.strip())  # 保留原始大小写
+                unique_terms.append(term.strip())
         
-        # 限制候选词数量，避免过多 API 调用
+        # 限制候选词数量
         return unique_terms[:5]
 
     @staticmethod

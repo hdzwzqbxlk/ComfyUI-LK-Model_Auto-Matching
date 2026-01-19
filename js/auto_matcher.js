@@ -627,15 +627,15 @@ function showResultsDialog(matches, downloadResults) {
             confirmBtn.disabled = true;
             confirmBtn.style.background = "#555";
             confirmBtn.style.cursor = "default";
-            // Do NOT close the dialog automatically
         };
         actionsBar.appendChild(confirmBtn);
     }
 
-    const closeBtn = document.createElement("button");
-    closeBtn.innerText = "🔄 再次网络筛选";
-    closeBtn.title = "强制忽略缓存，重新搜索在线资源";
-    closeBtn.style.cssText = `
+    // 再次网络筛选按钮
+    const retryBtn = document.createElement("button");
+    retryBtn.innerText = "🔄 再次网络筛选";
+    retryBtn.title = "强制忽略缓存，重新搜索在线资源";
+    retryBtn.style.cssText = `
                 flex: 1;
                 padding: 10px;
                 background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
@@ -646,22 +646,20 @@ function showResultsDialog(matches, downloadResults) {
                 font-weight: bold;
                 box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
                 `;
-    closeBtn.onclick = async () => {
-        // 关闭当前对话框
+    retryBtn.onclick = async () => {
         const modal = content.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
-        // 重新触发搜索 (强制忽略缓存)
         const autoMatchBtn = document.getElementById("lk-auto-match-btn");
         if (autoMatchBtn) {
-            await runAutoMatch(autoMatchBtn, true); // ignoreCache = true
+            await runAutoMatch(autoMatchBtn, true);
         }
     };
-    actionsBar.appendChild(closeBtn);
+    actionsBar.appendChild(retryBtn);
 
-    // 简单关闭按钮
-    const simpleCloseBtn = document.createElement("button");
-    simpleCloseBtn.innerText = "Close";
-    simpleCloseBtn.style.cssText = `
+    // 关闭按钮
+    const closeBtn = document.createElement("button");
+    closeBtn.innerText = "关闭";
+    closeBtn.style.cssText = `
                 padding: 10px 20px;
                 background: #444;
                 color: white;
@@ -669,11 +667,11 @@ function showResultsDialog(matches, downloadResults) {
                 border-radius: 6px;
                 cursor: pointer;
                 `;
-    simpleCloseBtn.onclick = () => {
+    closeBtn.onclick = () => {
         const modal = content.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
     };
-    actionsBar.appendChild(simpleCloseBtn);
+    actionsBar.appendChild(closeBtn);
 
     content.appendChild(actionsBar);
 
