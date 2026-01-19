@@ -5,7 +5,7 @@ __pycache__/
 # 敏感数据 / 本地索引 (不应上传)
 model_index*.json
 config.json
-DEVLOG.md
+# DEVLOG.md (Un-ignored for documentation)
 
 # 调试脚本
 debug_*.py
