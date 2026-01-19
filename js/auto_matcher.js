@@ -78,8 +78,9 @@ app.registerExtension({
         });
 
         // --- Logo / Title ---
+        const VERSION = "1.3.0";  // 版本号 - 推送前必须与 __init__.py 同步
         const titleSpan = document.createElement("span");
-        titleSpan.innerHTML = `<span style="color: #64b5f6; font-weight: 800;">LK</span> Auto Match`;
+        titleSpan.innerHTML = `<span style="color: #64b5f6; font-weight: 800;">LK</span> Auto Match <span style="color: #888; font-size: 11px;">v${VERSION}</span>`;
         titleSpan.style.fontSize = "14px";
         titleSpan.style.fontWeight = "600";
         titleSpan.style.marginRight = "8px";
