@@ -1,2 +1,4 @@
 aiohttp
 rapidfuzz>=3.0.0
+curl_cffi
+parsel
