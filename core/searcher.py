@@ -248,13 +248,20 @@ class GoogleOmniProvider(BaseProvider):
                 # Generic: a[href^="http"]:has(h3) -> more robust
                 
                 # Also try generic all links if specific selector fails
-                css_links = selector.css('a[href^="http"]::attr(href)').getall()
+                # FIX: Use 'a::attr(href)' to get ALL links, including relative ones like /url?q=...
+                # Previous 'a[href^="http"]' missed Google's redirect links
+                css_links = selector.css('a::attr(href)').getall()
                 for link in css_links:
-                    if "google.com" not in link:
-                         found_urls.add(link)
-                    elif "/url?q=" in link:
+                    # Case 1: Google Redirect Link (/url?q=https://...)
+                    if link.startswith("/url?q="):
                          match = re.search(r'url\?q=([^"&]+)', link)
-                         if match: found_urls.add(urllib.parse.unquote(match.group(1)))
+                         if match: 
+                             found_urls.add(urllib.parse.unquote(match.group(1)))
+                    
+                    # Case 2: Direct HTTP Link (e.g. Knowledge Graph, some layouts)
+                    elif link.startswith("http"):
+                         if "google.com" not in link and "googleusercontent" not in link:
+                              found_urls.add(link)
                 
                 original_lower = original_filename.lower()
                 
@@ -311,6 +318,71 @@ class GoogleOmniProvider(BaseProvider):
             "pageUrl": clean_url,
             "score": score
         }
+
+class LiblibProvider(BaseProvider):
+    """
+    Search models on liblib.art (哩布哩布) via HTML scraping.
+    Liblib 是国内最大的 AI 模型社区之一。
+    """
+    def __init__(self, config):
+        super().__init__(config)
+        self.search_url = "https://www.liblib.art/search"
+        
+    async def search(self, query, original_filename):
+        results = []
+        try:
+            print(f"[LiblibProvider] Searching: {query}")
+            
+            encoded_query = urllib.parse.quote(query)
+            url = f"{self.search_url}?keyword={encoded_query}"
+            
+            headers = self._get_headers("https://www.liblib.art/")
+            
+            async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
+                response = await session.get(url)
+                if response.status_code != 200:
+                    print(f"[LiblibProvider] Status {response.status_code}")
+                    return []
+                
+                html = response.text
+                selector = Selector(text=html)
+                
+                # Liblib 搜索结果页面使用动态 JS 渲染
+                # 尝试解析静态内容中的模型卡片链接
+                links = selector.css('a[href*="/modelinfo/"]::attr(href)').getall()
+                
+                original_lower = original_filename.lower()
+                seen_urls = set()
+                
+                for link in links[:10]:
+                    if link in seen_urls:
+                        continue
+                    seen_urls.add(link)
+                    
+                    if link.startswith("/"):
+                        full_url = f"https://www.liblib.art{link}"
+                    elif link.startswith("http"):
+                        full_url = link
+                    else:
+                        continue
+                    
+                    model_id = link.split("/modelinfo/")[-1].split("/")[0] if "/modelinfo/" in link else "Liblib Model"
+                    
+                    score = AdvancedTokenizer.calculate_similarity(original_lower, model_id.lower())
+                    
+                    if score > 0.3:
+                        results.append({
+                            "source": "Liblib",
+                            "name": model_id,
+                            "filename": "Direct Link (Click to Visit)",
+                            "url": full_url,
+                            "pageUrl": full_url,
+                            "score": score
+                        })
+                        
+        except Exception as e:
+            print(f"[LiblibProvider] Error: {e}")
+        return results
 
 class DuckDuckGoProvider(BaseProvider):
     """
@@ -379,7 +451,14 @@ class DuckDuckGoProvider(BaseProvider):
             source = "Civitai (DDG)"; name = "Civitai Model"
         elif "huggingface.co" in url_lower:
             if "blob" in url_lower and not any(ext in url_lower for ext in [".safetensors", ".gguf", ".pt", ".pth", ".bin", ".onnx"]): return None
-            source = "HuggingFace (DDG)"; name = url_lower.split("huggingface.co/")[-1].split("/")[0]
+            source = "HuggingFace (DDG)"
+            # Fix: Extract full repo "user/repo" not just "user"
+            # url_lower: https://huggingface.co/FX-FeiHou/wan2.2-Remix/...
+            parts = url_lower.split("huggingface.co/")[-1].split("/")
+            if len(parts) >= 2:
+                name = f"{parts[0]}/{parts[1]}"
+            else:
+                name = parts[0]
         elif "modelscope.cn/models" in url_lower:
             source = "ModelScope (DDG)"; name = "ModelScope Model"
         elif "liblib.art" in url_lower:
@@ -405,9 +484,12 @@ class ModelSearcher:
         self.config = self.load_config()
         self.search_cache = {}
         
+        # Provider 优先级：Civitai > HuggingFace > Liblib > ModelScope > Google (兜底)
+        # DuckDuckGo 作为 Google 的备选兜底
         self.providers = [
             CivitaiProvider(self.config),
             HuggingFaceProvider(self.config),
+            LiblibProvider(self.config),
             ModelScopeProvider(self.config),
             GoogleOmniProvider(self.config),
             DuckDuckGoProvider(self.config)
@@ -420,6 +502,9 @@ class ModelSearcher:
                     return json.load(f)
             except: pass
         return {"civitai_api_key": ""}
+
+    def get_config(self):
+        return self.config
 
     def save_config(self, new_config):
         self.config.update(new_config)
@@ -466,19 +551,41 @@ class ModelSearcher:
         print(f"[AutoMatch] Searching: {filename} | Terms: {search_terms}")
         
         all_candidates = []
-        primary_term = search_terms[0] if search_terms else base_name
         
-        # Concurrent Search
-        tasks = []
-        for provider in self.providers:
-            tasks.append(provider.search(primary_term, base_name))
+        # Progressive Search Strategy (Attempt up to 5 terms)
+        # 1. Raw Stem -> 2. Spaced -> ... -> 5. Deep Tokenized
+        max_attempts = 5
+        
+        for i, term in enumerate(search_terms[:max_attempts]):
+            # If we already have a perfect match from previous (unlikely due to break) or cache, stop.
             
-        results_list = await asyncio.gather(*tasks, return_exceptions=True)
+            # Skip empty terms
+            if not term or len(term) < 2: continue
+            
+            print(f"[AutoMatch] Attempt {i+1}: Searching for '{term}'")
+            
+            # Concurrent Search
+            tasks = []
+            for provider in self.providers:
+                tasks.append(provider.search(term, base_name))
+                
+            results_list = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            current_candidates = []
+            for res in results_list:
+                if isinstance(res, list):
+                    current_candidates.extend(res)
+            
+            all_candidates.extend(current_candidates)
+            
+            # Smart Early Exit: If we found a High Confidence match, stop searching
+            # This speeds up the process for easy models (Attempt 1 hit)
+            current_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
+            if current_candidates and current_candidates[0].get("score", 0) >= 0.85:
+                print(f"[AutoMatch] High confidence match found ({current_candidates[0]['score']:.2f}). Stopping search.")
+                break
         
-        for res in results_list:
-            if isinstance(res, list):
-                all_candidates.extend(res)
-        
+        # Final Sort and Deduplication
         all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
         
         unique_candidates = []

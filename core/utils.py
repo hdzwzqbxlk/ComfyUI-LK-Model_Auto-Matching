@@ -9,7 +9,7 @@ USE_RAPIDFUZZ = True
 # 噪声后缀词（仅过滤纯技术后缀，不过滤版本号和模型组件名）
 NOISE_SUFFIXES = {
     # 精度格式
-    'fp16', 'fp32', 'bf16', 'int8', 'int4', 'q4', 'q8', 'gguf', 'f16', 'f32',
+    'fp16', 'fp32', 'bf16', 'fp8', 'int8', 'int4', 'q4', 'q8', 'gguf', 'f16', 'f32',
     # 训练变体
     'pruned', 'ema', 'emaonly', 'noembed', 'noema',
     # 文件扩展名
@@ -168,7 +168,7 @@ VARIANT_SUFFIXES = {
     # Quantization
     'q4', 'q5', 'q8', 'q6', 'q3', 'k', 'm', 's', 'km', 'ks', 'kp',
     'q4_0', 'q4_1', 'q5_0', 'q5_1', 'q8_0', 'q4_k', 'q4_k_m', 'q4_k_s', 
-    'bf16', 'fp16', 'fp32', 'int8', 'int4',
+    'bf16', 'fp16', 'fp32', 'fp8', 'int8', 'int4',
     # Format
     'gguf', 'safetensors', 'ckpt', 'pt', 'bin', 'pth', 'onnx',
     # Training
@@ -199,32 +199,59 @@ class AdvancedTokenizer:
     统一的智能分词器，用于本地匹配和网络搜索
     """
     
+
+
+    @staticmethod
+    def _normalize_text(text):
+        """
+        统一的文本预处理/归一化逻辑
+        """
+        text = text.lower()
+        
+        # 1. CJK Segmentation
+        text = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', text)
+        text = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', text)
+        
+        # 2. Global Normalization (F.1 -> Flux 1)
+        text = text.replace("f.1", "flux 1")
+        text = text.replace("f 1", "flux 1")
+        text = re.sub(r'\bf[\.\-_\s]?1\b', 'flux 1', text)
+        
+        # 3. Replace delimiters
+        for char in ['_', '-', '.', ' ', '/', '\\', '[', ']', '(', ')']:
+            text = text.replace(char, ' ')
+            
+        return text
+
     @staticmethod
     def tokenize(text):
         """
         将文本拆分为 token 集合 (支持数字分离: flux1 -> flux 1)
         """
-        text = text.lower()
-        # 替换常见分隔符
-        for char in ['_', '-', '.', ' ', '/', '\\', '[', ']', '(', ')']:
-            text = text.replace(char, ' ')
-            
-        # 0. 预处理归一化 (Global Normalization)
-        # Handle "F 1", "F.1" -> "Flux 1" (Safe regex for tokens)
-        # Use negative lookbehind (?<![a-z]) to handle "人脸f" (Chinese char is \w so \b fails)
-        text = re.sub(r'(?<![a-z])f\s*1(?![a-z0-9])', 'flux 1', text)
-        
+        # 使用统一预处理
+        text = AdvancedTokenizer._normalize_text(text)
+
         tokens = []
         for part in text.split():
-            # split alpha and numeric (e.g., flux1 -> flux, 1)
-            # 但保留纯版本号如 1.5 已经在前面把 . 替换了，变 1 5
-            sub_tokens = re.findall(r'[a-z]+|\d+', part)
+            # 4. Alias Expansion (on individual parts)
+            if part in MODEL_ALIASES:
+                # e.g. "sdxl" -> "stable", "diffusion", "xl"
+                expanded = MODEL_ALIASES[part].split()
+                tokens.extend(expanded)
+                continue
+
+            # 5. Split alpha and numeric, BUT keep CJK characters
+            # Modified regex to include non-ASCII characters (e.g. Chinese)
+            # [a-z]+ matches English words
+            # \d+ matches numbers
+            # [^\x00-\x7f]+ matches non-ASCII (Chinese, etc.)
+            sub_tokens = re.findall(r'[a-z]+|\d+|[^\x00-\x7f]+', part)
             if sub_tokens:
                 tokens.extend(sub_tokens)
             else:
                 tokens.append(part)
                 
-        # 过滤极短 token，但保留单个数字 (如 '1' in 'flux 1')
+        # 6. Post-process tokens
         ordered_tokens = []
         seen = set()
         for t in tokens:
@@ -290,9 +317,11 @@ class AdvancedTokenizer:
             'q4', 'q5', 'q6', 'q8', 'q3', 'bf16', 'fp16', 'fp32', 'fp8', 'int8', 'int4',
             'q4_0', 'q4_1', 'q5_0', 'q5_1', 'q8_0', 'q4_k', 'q4_k_m', 'q4_k_s', 'q5_k_m', 'q5_k_s', 'q6_k',
             # 单字母量化后缀（量化标记残留，如 Q4_K_S 分解后的 k、s）
-            'k', 'm', 's',
+            'k', 'm', 's', 'l',
             # 格式后缀
             'gguf', 'safetensors', 'ckpt', 'pt', 'bin', 'pth', 'onnx', 'pkl',
+            # GGUF 特殊精度
+            'f16', 'f32',
             # 训练变体
             'pruned', 'ema', 'emaonly', 'noema', 'noembed', 'full',
             # 发布标记
@@ -334,9 +363,9 @@ class AdvancedTokenizer:
                 i += 1
                 continue
             
-            # 检查是否是复杂量化标记 (q + 数字 + 可选后缀)
-            # 例如 q4, q4_k, q4_k_m 等复杂模式
-            if re.match(r'^q\d+[a-z0-9_]*$', part):
+            # 检查是否是复杂量化标记 (q/iq/sq + 数字 + 可选后缀)
+            # 例如 q4, q4_k, iq2_xxs, sq1 等复杂模式
+            if re.match(r'^(?:q|iq|sq|tq)\d+[a-z0-9_]*$', part):
                 i += 1
                 continue
             
@@ -419,13 +448,19 @@ class AdvancedTokenizer:
             gguf_search = f"{core_name}-GGUF"
             search_terms.append(gguf_search)
             
-            # 备选：原始模型名（不含量化和 GGUF）
-            search_terms.append(core_name)
+            # 备选：原始模型名 + gguf
+            if 'gguf' not in core_name.lower():
+                search_terms.append(f"{core_name} gguf")
+            else:
+                search_terms.append(core_name)
             
-            # 降级：使用连字符分隔的核心词
+            # 降级：使用连字符分隔的核心词 + gguf
             core_tokens = [t for t in re.split(r'[-_]', core_name) if t]
             if core_tokens:
-                search_terms.append(' '.join(core_tokens))
+                tokenized_name = ' '.join(core_tokens)
+                if 'gguf' not in tokenized_name.lower():
+                     tokenized_name += " gguf"
+                search_terms.append(tokenized_name)
         
         # === 通用处理 ===
         # Phase 1: 保留原始格式（包含中文）的清洗版本
@@ -435,19 +470,47 @@ class AdvancedTokenizer:
         if cleaned_base and cleaned_base not in [t.lower() for t in search_terms]:
             # 保留原始连字符格式
             clean_hyphen = re.sub(r'\s+', '-', cleaned_base.strip())
+            if ext_lower == '.gguf': clean_hyphen += " gguf"
             search_terms.append(clean_hyphen)
             
             # 原始格式（保留中文）
+            if ext_lower == '.gguf': cleaned_base += " gguf"
             search_terms.append(cleaned_base)
         
-        # Phase 2: 中文+英文混合处理
-        # 对于包含中文的文件名，提供完整的原始格式
+        # Phase 2: 中文+英文混合处理 (Chinese Core Extraction - 优化版 v3)
+        # 对于包含中文的文件名，优先提取英文核心作为首选搜索词
+        # 因为 Civitai/HuggingFace 国际平台对中文支持差
         if re.search(r'[\u4e00-\u9fff]', base_name):
+            # === 2a: 英文核心提取 (English Core First) ===
+            # 提取所有英文+数字词作为首选搜索词
+            english_tokens = re.findall(r'[a-zA-Z][a-zA-Z0-9]*', base_name)
+            # 过滤掉太短的词和噪声词
+            english_tokens = [t for t in english_tokens if len(t) > 1 and t.lower() not in NOISE_SUFFIXES]
+            
+            if english_tokens:
+                # 构建英文核心搜索词
+                english_core = ' '.join(english_tokens)
+                # 符号归一化: F.1 -> Flux.1, F1 -> Flux 1
+                english_core = re.sub(r'(?i)F[\.\s_-]?1(?![a-z0-9])', 'Flux.1', english_core)
+                
+                if ext_lower == '.gguf' and 'gguf' not in english_core.lower():
+                    english_core += " gguf"
+                
+                # 将英文核心放在最前面 (优先级最高)
+                if english_core.lower() not in [t.lower() for t in search_terms]:
+                    search_terms.insert(0, english_core)
+            
+            # === 2b: 完整中文名 (Full Chinese - 用于 Liblib/ModelScope) ===
             # 替换分隔符为空格，保留中文
             spaced = re.sub(r'[-_.]+', ' ', base_name)
             # 移除量化标记
             spaced = re.sub(r'\s+Q\d+[_A-Z0-9]*\s*$', '', spaced, flags=re.IGNORECASE)
             spaced = spaced.strip()
+            
+            # GGUF 强制追加标识
+            if ext_lower == '.gguf' and 'gguf' not in spaced.lower():
+                spaced += " gguf"
+                
             if spaced and spaced.lower() not in [t.lower() for t in search_terms]:
                 search_terms.append(spaced)
 
@@ -462,6 +525,7 @@ class AdvancedTokenizer:
         
         deep_clean = deep_clean.strip()
         if deep_clean and len(deep_clean) > 3 and deep_clean.lower() not in [t.lower() for t in search_terms]:
+             if ext_lower == '.gguf': deep_clean += " gguf"
              search_terms.append(deep_clean)
         
         
@@ -471,6 +535,7 @@ class AdvancedTokenizer:
         
         if final_tokens:
             space_joined = " ".join(final_tokens)
+            if ext_lower == '.gguf': space_joined += " gguf"
             if space_joined.lower() not in [t.lower() for t in search_terms]:
                 search_terms.append(space_joined)
         
@@ -491,6 +556,8 @@ class AdvancedTokenizer:
         optimized_base = re.sub(r'[-_.]+', ' ', optimized_base).strip()
         
         if optimized_base and len(optimized_base) > 2:
+            if ext_lower == '.gguf': optimized_base += " gguf"
+            
             # 只有当优化后的词与现有词不同时才添加
             if optimized_base.lower() not in [t.lower() for t in search_terms]:
                 # 放在比较靠前的位置 (Priority 2)
@@ -500,6 +567,9 @@ class AdvancedTokenizer:
         # 始终包含原始文件名（仅替换分隔符），保留 bf16, int8 等精确标记
         # 放在最后作为精确匹配候选项
         raw_spaced = re.sub(r'[-_.]+', ' ', base_name).strip()
+        if ext_lower == '.gguf' and 'gguf' not in raw_spaced.lower():
+             raw_spaced += " gguf"
+             
         if raw_spaced.lower() not in [t.lower() for t in search_terms]:
             # 如果原始名很长，可能需要在前面尝试
             search_terms.append(raw_spaced)
@@ -579,9 +649,10 @@ class AdvancedTokenizer:
         # Regex for specific quantizations
         # 1. GGUF Quants (Complex)
         # q4_0, q4_1, q5_0, q5_1, q8_0, q4_k, q4_k_m, q4_k_s...
-        # match full pattern q\d+[a-z0-9_]*
+        # iq1_s, iq2_xxs, sq...
+        # match full pattern (q|iq|sq|tq)\d+[a-z0-9_]*
         # Allow separators: - _ .
-        gguf_match = re.search(r'(?:[\W_]|^)(q\d+[a-z0-9_]*)(?:[\W_]|$)', lower)
+        gguf_match = re.search(r'(?:[\W_]|^)((?:q|iq|sq|tq)\d+[a-z0-9_]*)(?:[\W_]|$)', lower)
         if gguf_match:
             return gguf_match.group(1)
             
@@ -590,6 +661,9 @@ class AdvancedTokenizer:
         if "fp16" in lower: return "fp16"
         if "fp32" in lower: return "fp32"
         if "fp8" in lower: return "fp8"
+        if "bf16" in lower: return "bf16"
+        if "f16" in lower: return "fp16" # Normalize F16 to fp16
+        if "f32" in lower: return "fp32" # Normalize F32 to fp32
         if "int8" in lower: return "int8"
         if "int4" in lower: return "int4"
         
@@ -840,15 +914,47 @@ class AdvancedTokenizer:
                 # 90%+ 核心词被覆盖，额外奖励 0.15
                 jaccard = min(1.0, jaccard + 0.15)
         
+        # === 2.5 Significant Content Mismatch Penalty ===
+        # 如果一侧包含了另一侧没有的“核心描述词”，则大幅扣分
+        # 这防止 "AsianFace F.1" Matches "Flux1-dev"
+        # 核心描述词定义：去除通用技术词后的所有 Token
+        
+        # symmetric_difference: 仅出现在其中一侧的词
+        sym_diff = core_a.symmetric_difference(core_b)
+        
+        # 如果差异词中包含非数字/非单字母的实质性内容 -> 视为不匹配
+        penalty = 0.0
+        for t in sym_diff:
+            # 忽略纯数字 (版本号差异通常由其他逻辑处理/容忍)
+            if t.isdigit(): continue
+            # 忽略极短词 (1个字母)
+            if len(t) < 2: continue
+            # 忽略常见连接词/通用词
+            if t in {'v', 'version', 'ver', 'model', 'net', 'test'}: continue
+            
+            # 如果出现了额外的实质性单词 (e.g. 'asian', 'face', 'girl', 'animex')
+            penalty += 0.3
+            
+        jaccard = max(0.0, jaccard - penalty)
+        
         # 3. Sequence Similarity (用于捕捉顺序和部分匹配)
-        # 使用 rapidfuzz 加速（比 difflib 快 10-100x）
+        # 使用 rapidfuzz 加速
+        # 关键修改：使用归一化后的文本进行比较，以匹配 F.1 vs Flux 1
+        norm_a = AdvancedTokenizer._normalize_text(processed_a)
+        norm_b = AdvancedTokenizer._normalize_text(processed_b)
+        
+        # 如果归一化后变成空的（极少见），回退到原始
+        s1 = norm_a if norm_a.strip() else processed_a.lower()
+        s2 = norm_b if norm_b.strip() else processed_b.lower()
 
         # rapidfuzz.fuzz.ratio 返回 0-100 的分数
-        seq_ratio = rf_fuzz.ratio(processed_a.lower(), processed_b.lower()) / 100.0
+        seq_ratio = rf_fuzz.ratio(s1, s2) / 100.0
         # 额外使用 token_set_ratio 捕捉词汇重排序匹配
-        token_ratio = rf_fuzz.token_set_ratio(processed_a.lower(), processed_b.lower()) / 100.0
+        token_ratio = rf_fuzz.token_set_ratio(s1, s2) / 100.0
         seq_ratio = max(seq_ratio, token_ratio)
         
         # 加权平均: Token 相似度通常更重要，因为文件名可能有无关前缀/后缀
-        return (jaccard * 0.7) + (seq_ratio * 0.3)
+        final_score = (jaccard * 0.7) + (seq_ratio * 0.3)
+             
+        return final_score
 

@@ -1,6 +1,17 @@
 {
     "versions": [
         {
+            "version": "1.4.0",
+            "date": "2026-01-22",
+            "changes": [
+                "Feature: Provider priority reordering (Civitai > HuggingFace > Liblib > ModelScope > Google)",
+                "Feature: Added LiblibProvider for liblib.art native search",
+                "Feature: Chinese Core Extraction for better international platform matching",
+                "Feature: Non-model file filtering in scanner (VALID_MODEL_EXTENSIONS)",
+                "Improvement: English-only tokens as primary search term for Chinese filenames"
+            ]
+        },
+        {
             "version": "1.3.1",
             "date": "2026-01-19",
             "changes": [

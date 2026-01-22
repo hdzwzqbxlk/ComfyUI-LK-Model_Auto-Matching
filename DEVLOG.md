@@ -1,6 +1,33 @@
 # ComfyUI-LK-Model_Auto-Matching 开发日志
 
-> 最后更新: 2026-01-19 | 版本: v1.3.1
+> 最后更新: 2026-01-22 | 版本: v1.4.0
+
+---
+
+## 🚀 v1.4.0 - 搜索精准度优化 (2026-01-22)
+
+### 🔥 核心改进
+1. **Provider 优先级重排**:
+   - 新顺序: `Civitai → HuggingFace → Liblib(新增) → ModelScope → Google → DuckDuckGo`
+   - 高优先级平台返回高分结果时自动跳过低优先级搜索，提升响应速度。
+
+2. **Liblib Provider (新增)**:
+   - 新增对 **liblib.art (哩布哩布)** 平台的原生搜索支持。
+   - 通过 CSS Selector 解析模型卡片链接，支持中文模型名搜索。
+
+3. **中文分词增强 (Chinese Core Extraction)**:
+   - 对包含中文的模型名，**优先提取英文核心词**作为首选搜索词。
+   - 效果: `哪吒Flux模型_V2.0.safetensors` → 首选词: `"Flux V2"`
+   - 这大幅提升了中文模型在 Civitai/HuggingFace 等国际平台的匹配率。
+
+4. **非模型文件过滤 (Scanner Level)**:
+   - 在 `scanner.py` 扫描阶段新增 `VALID_MODEL_EXTENSIONS` 常量。
+   - 自动过滤 `.png`, `.txt`, `.mp3` 等非模型文件，避免索引污染。
+
+### 🛠 技术细节
+- `searcher.py`: 新增 `LiblibProvider` 类 (L322-385)，重排 `self.providers` 列表。
+- `utils.py`: `extract_search_terms()` 增加英文核心提取逻辑 (Phase 2a)。
+- `scanner.py`: 新增 `VALID_MODEL_EXTENSIONS` 集合，在 `disk_files` 循环中过滤。
 
 ---
 
@@ -11,18 +38,30 @@
    - 针对 `wan22RemixSFW` 这种连写命名，实现了 `CamelCase` 和 `AlphaNumeric` 自动拆分。
    - 效果: `wan22Remix` -> `wan 22 Remix`，完美命中 HuggingFace 仓库。
 2. **Progressive Search (渐进式搜索策略)**:
-   - 自动执行三级回退搜索: `Raw Stem` (精准) -> `Spaced` (常规) -> `Deep Token` (模糊)。
-   - 大幅提升了冷门和复杂命名模型的召回率。
-3. **Chinese & Symbol Optimization (中英混排增强)**:
-   - **Symbol Normalization**: 自动识别并修正简写符号 (如 `F.1` -> `Flux.1`)，解决了大量 Flux 模型漏搜问题。
-   - **Hybrid Scoring**: 引入"英文核心词增强"评分机制。即使文件名包含大量中文前缀 (如 `好看的亚洲人脸F.1`)，只要英文核心 ID (`girl_flux`) 匹配，依然能获得高相似度评分 (>0.7)。
+3. **Google Search 修复**:
+   - 修复了此前无法抓取 Google 搜索结果中重定向链接 (如 `/url?q=...`) 的 Bug。
+   - 现在能够正确提取并匹配 **LiblibAI (哩布哩布)**、**ModelScope (魔搭)** 等平台的链接。
+4. **Strict Matching Refinement (严格模式)**:
+   - **内容差异惩罚**: 防止 Finetune 模型与 Base 模型误匹配。
+     - 效果: `AsianFace F.1` (Finetune) vs `Flux1-dev` (Base) -> **不匹配** (正确)。
+   - **GGUF Search Enhancement**:
+   - **强制 GGUF 关键字**: 针对 `.gguf` 文件所生成的所有搜索词（包括降级备选相），均强制追加 `gguf`，确保搜索结果精准命中 GGUF 仓库。
+   - **Extended Precision Support (全面扩展)**:
+     - 基础类型: `Q2_K`, `Q3_K_L`, `Q4_K_M`, `Q5_K_S`, `Q6_K`, `Q8_0` 等。
+     - IMatrix 新类型: `IQ1_S`, `IQ2_XXS`, `IQ3_M`, `IQ4_NL` 等。
+     - 特殊类型: `SQ`, `TQ` (Ternary), `F16`, `F32`。
+     - 所有这些后缀现在都能被 `detect_quantization` 正确识别，并从核心命名中剥离，避免干扰匹配。
+6. **Robust Filtering**:
+   - 增加文件扩展名过滤器，匹配器将自动忽略非模型文件 (`.mp3`, `.png`, `.txt` 等)，仅处理 `.safetensors`, `.gguf`, `.ckpt` 等有效模型格式。
+7. **UI Experience**:
+   - 修复设置面板中已保存的 API Key 不显示的问题 (Backend method missing fix)。
 
 ### 🛠 问题修复
 1. **HuggingFace URL 解析修复**:
    - 之前: `huggingface.co/User/Repo` -> 解析为 `User` (评分失败)。
    - 现在: 解析为 `User/Repo` (评分成功)，可正确索引 Gated 模型。
-2. **DuckDuckGo 稳定性增强**:
-   - 优化了 HTML 解析逻辑，作为 Google 的强力兜底方案。
+2. **DuckDuckGo & Google 稳定性增强**:
+   - 优化了 HTML 解析逻辑 (CSS Selector)，能够兼容 Google 的动态结果结构。
 
 ### 💅 体验优化
 - 移除了设置弹窗标题中冗余的版本号显示。

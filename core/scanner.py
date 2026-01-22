@@ -19,6 +19,12 @@ MODEL_TYPES = {
     "diffusers": "diffusers"
 }
 
+# 有效模型文件扩展名 (用于过滤非模型文件)
+VALID_MODEL_EXTENSIONS = {
+    '.safetensors', '.ckpt', '.pt', '.pth', '.bin', 
+    '.gguf', '.onnx', '.pkl', '.sft'
+}
+
 HASH_VERSION = 1  # 索引结构版本，不兼容时升级
 
 class ModelIndex:
@@ -148,6 +154,11 @@ class ModelIndex:
                 for filename in filenames:
                     full_path = folder_paths.get_full_path(folder_key, filename)
                     if not full_path or not os.path.exists(full_path): continue
+                    
+                    # 过滤非模型文件 (图片、音频、文本等)
+                    _, ext = os.path.splitext(full_path)
+                    if ext.lower() not in VALID_MODEL_EXTENSIONS:
+                        continue
                     
                     stat = os.stat(full_path)
                     disk_files[full_path] = {

@@ -71,6 +71,13 @@ class ModelMatcher:
             current_val = item.get("current")
             if not current_val:
                 continue
+                
+            # [Filter] Skip non-model files (images, audio, etc)
+            # Valid extensions for ComfyUI models
+            VALID_EXTS = {'.safetensors', '.ckpt', '.gguf', '.pt', '.bin', '.pth', '.onnx', '.pkl'}
+            _, ext = os.path.splitext(current_val)
+            if ext.lower() not in VALID_EXTS:
+                continue
 
             target_norm = self._normalize_name(current_val)
             target_base = self._get_basename(current_val)
