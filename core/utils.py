@@ -477,12 +477,29 @@ class AdvancedTokenizer:
             if ext_lower == '.gguf': cleaned_base += " gguf"
             search_terms.append(cleaned_base)
         
-        # Phase 2: 中文+英文混合处理 (Chinese Core Extraction - 优化版 v3)
-        # 对于包含中文的文件名，优先提取英文核心作为首选搜索词
-        # 因为 Civitai/HuggingFace 国际平台对中文支持差
+        # Phase 2: 中文+英文混合处理 (Chinese Core Extraction - 优化版 v4)
+        # 核心改进：对于包含中文的模型名，首选完整模型名（只去扩展名和量化标记）
+        # 英文核心作为备选，用于国际平台的兜底搜索
         if re.search(r'[\u4e00-\u9fff]', base_name):
-            # === 2a: 英文核心提取 (English Core First) ===
-            # 提取所有英文+数字词作为首选搜索词
+            # === 2a: 完整中文名优先 (Full Name First - 用于 Liblib/ModelScope) ===
+            # 保留完整模型名（包含中文），只移除量化标记
+            full_name = base_name
+            # 移除尾部量化标记 (如 _Q4_K_M, -Q8_0)
+            full_name = re.sub(r'[-_]Q\d+[_A-Z0-9]*$', '', full_name, flags=re.IGNORECASE)
+            full_name = full_name.strip()
+            
+            # GGUF 强制追加标识
+            if ext_lower == '.gguf' and 'gguf' not in full_name.lower():
+                full_name_search = f"{full_name} gguf"
+            else:
+                full_name_search = full_name
+            
+            # 将完整中文名放在最前面 (优先级最高)
+            if full_name_search and full_name_search.lower() not in [t.lower() for t in search_terms]:
+                search_terms.insert(0, full_name_search)
+            
+            # === 2b: 英文核心提取 (English Core - 用于 Civitai/HuggingFace 兜底) ===
+            # 提取所有英文+数字词作为备选搜索词
             english_tokens = re.findall(r'[a-zA-Z][a-zA-Z0-9]*', base_name)
             # 过滤掉太短的词和噪声词
             english_tokens = [t for t in english_tokens if len(t) > 1 and t.lower() not in NOISE_SUFFIXES]
@@ -491,28 +508,14 @@ class AdvancedTokenizer:
                 # 构建英文核心搜索词
                 english_core = ' '.join(english_tokens)
                 # 符号归一化: F.1 -> Flux.1, F1 -> Flux 1
-                english_core = re.sub(r'(?i)F[\.\s_-]?1(?![a-z0-9])', 'Flux.1', english_core)
+                english_core = re.sub(r'(?i)F[\.\\s_-]?1(?![a-z0-9])', 'Flux.1', english_core)
                 
                 if ext_lower == '.gguf' and 'gguf' not in english_core.lower():
                     english_core += " gguf"
                 
-                # 将英文核心放在最前面 (优先级最高)
+                # 英文核心作为备选 (追加到后面，不插入最前)
                 if english_core.lower() not in [t.lower() for t in search_terms]:
-                    search_terms.insert(0, english_core)
-            
-            # === 2b: 完整中文名 (Full Chinese - 用于 Liblib/ModelScope) ===
-            # 替换分隔符为空格，保留中文
-            spaced = re.sub(r'[-_.]+', ' ', base_name)
-            # 移除量化标记
-            spaced = re.sub(r'\s+Q\d+[_A-Z0-9]*\s*$', '', spaced, flags=re.IGNORECASE)
-            spaced = spaced.strip()
-            
-            # GGUF 强制追加标识
-            if ext_lower == '.gguf' and 'gguf' not in spaced.lower():
-                spaced += " gguf"
-                
-            if spaced and spaced.lower() not in [t.lower() for t in search_terms]:
-                search_terms.append(spaced)
+                    search_terms.append(english_core)
 
         # === Phase 2b: Deep Tokenization (CamelCase & AlphaNumeric Split) ===
         # 针对 wan22RemixSFW 这种连写情况，强制拆分为 "wan 22 Remix SFW"

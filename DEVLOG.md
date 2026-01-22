@@ -17,8 +17,10 @@
 
 3. **中文分词增强 (Chinese Core Extraction)**:
    - 对包含中文的模型名，**优先提取英文核心词**作为首选搜索词。
-   - 效果: `哪吒Flux模型_V2.0.safetensors` → 首选词: `"Flux V2"`
-   - 这大幅提升了中文模型在 Civitai/HuggingFace 等国际平台的匹配率。
+   - 效果: `哪吒Flux模型_V2.0.safetensors`
+     - 首选词: `"哪吒Flux模型_V2.0"` (Liblib/ModelScope 优先)
+     - 备选词: `"Flux V2"` (Civitai/HF 兜底)
+   - 策略调整: 针对中文模型名，优先保留完整中文名称以确保国内平台搜索准确性，同时保留英文核心词以兼容国际平台。
 
 4. **非模型文件过滤 (Scanner Level)**:
    - 在 `scanner.py` 扫描阶段新增 `VALID_MODEL_EXTENSIONS` 常量。

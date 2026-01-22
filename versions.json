@@ -8,7 +8,7 @@
                 "Feature: Added LiblibProvider for liblib.art native search",
                 "Feature: Chinese Core Extraction for better international platform matching",
                 "Feature: Non-model file filtering in scanner (VALID_MODEL_EXTENSIONS)",
-                "Improvement: English-only tokens as primary search term for Chinese filenames"
+                "Improvement: Full Chinese filename as primary search term (with English fallback) for better accuracy on localized platforms"
             ]
         },
         {
