@@ -73,10 +73,10 @@ class ModelMatcher:
                 continue
                 
             # [Filter] Skip non-model files (images, audio, etc)
-            # Valid extensions for ComfyUI models
-            VALID_EXTS = {'.safetensors', '.ckpt', '.gguf', '.pt', '.bin', '.pth', '.onnx', '.pkl'}
+            # Use VALID_MODEL_EXTENSIONS from scanner for consistency
+            from .scanner import VALID_MODEL_EXTENSIONS
             _, ext = os.path.splitext(current_val)
-            if ext.lower() not in VALID_EXTS:
+            if ext.lower() not in VALID_MODEL_EXTENSIONS:
                 continue
 
             target_norm = self._normalize_name(current_val)

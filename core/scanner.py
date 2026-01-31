@@ -100,41 +100,8 @@ class ModelIndex:
         current_models_on_disk = set()
         new_or_updated_count = 0
         
-        # 1. 扫描磁盘
-        for type_key, folder_key in MODEL_TYPES.items():
-            # 获取该类型下的所有文件名 (folder_paths.get_filename_list 返回的是相对路径 list)
-            try:
-                # ComfyUI 方法: get_filename_list
-                filenames = folder_paths.get_filename_list(folder_key)
-                if not filenames:
-                    print(f"[AutoMatch] No models found for type: {type_key} (folder: {folder_key})")
-                    continue
-                
-                print(f"[AutoMatch] Scanning {len(filenames)} files for {type_key}...")
+        # 1. Scan disk (Refactored below)
 
-                for filename in filenames:
-                    # 获取绝对路径
-                    full_path = folder_paths.get_full_path(folder_key, filename)
-                    if not full_path:
-                        continue
-                    
-                    # 记录该路径存在
-                    current_models_on_disk.add(full_path)
-                    
-                    # 检查是否需要更新索引
-                    # 我们使用 full_path 作为 lookup key 来检查是否已索引 (为了快速检测变化)
-                    # 但存储时使用 hash 作为 key
-                    
-                    # 为了高效，我们需要反向查找: Path -> Hash
-                    # 但因为 JSON 结构是 Hash -> Info，我们需要先遍历一遍建立临时映射?
-                    # 为了增量快，我们在内存中维护 Path -> Info 的映射会更好?
-                    # 暂且用简单的遍历查找 (优化点)
-                    # 或者，我们在 data 中存一个 "paths" 辅助字典?
-                    pass 
-
-            except Exception as e:
-                print(f"[AutoMatch] Error creating file list for {type_key}: {e}")
-                continue
 
         # 优化: 重构数据结构以支持 Path-Key 查找?
         # 不，用户要求 "模型位置变动也能感应到"，这意味着 Identity 是 Hash。
@@ -146,28 +113,55 @@ class ModelIndex:
         
         # 实现逻辑:
         # A. 构建 disk_files_map: { full_path: { type, filename, mtime, size } }
+        # Implement logic:
+        # A. Build disk_files_map by manually walking directories
         disk_files = {}
         for type_key, folder_key in MODEL_TYPES.items():
             try:
-                filenames = folder_paths.get_filename_list(folder_key)
-                if not filenames: continue
-                for filename in filenames:
-                    full_path = folder_paths.get_full_path(folder_key, filename)
-                    if not full_path or not os.path.exists(full_path): continue
-                    
-                    # 过滤非模型文件 (图片、音频、文本等)
-                    _, ext = os.path.splitext(full_path)
-                    if ext.lower() not in VALID_MODEL_EXTENSIONS:
+                # ComfyUI cache bypass: Get root folders instead of file list
+                roots = folder_paths.get_folder_paths(folder_key)
+                if not roots:
+                    continue
+                
+                for root_path in roots:
+                    if not os.path.exists(root_path):
                         continue
-                    
-                    stat = os.stat(full_path)
-                    disk_files[full_path] = {
-                        "type": type_key,
-                        "filename": filename,
-                        "size": stat.st_size,
-                        "mtime": stat.st_mtime
-                    }
-            except:
+                        
+                    for root, dirs, files in os.walk(root_path, followlinks=True):
+                        # Filter hidden directories
+                        dirs[:] = [d for d in dirs if not d.startswith('.')]
+                        
+                        for filename in files:
+                            # Filter hidden files
+                            if filename.startswith('.'):
+                                continue
+                                
+                            _, ext = os.path.splitext(filename)
+                            if ext.lower() not in VALID_MODEL_EXTENSIONS:
+                                continue
+                                
+                            full_path = os.path.join(root, filename)
+                            
+                            # Get relative path for display/logic (optional, but good for consistency)
+                            # relative_name = os.path.relpath(full_path, root_path)
+                            
+                            try:
+                                stat = os.stat(full_path)
+                                disk_files[full_path] = {
+                                    "type": type_key,
+                                    "filename": filename, # Store just filename or relative?
+                                    # Current logic uses filename from get_filename_list which is RELATIVE usually.
+                                    # But here we probably want the full relative path if it's in a subdir?
+                                    # ComfyUI's get_filename_list returns "sub/model.safetensors"
+                                    # Let's try to match that behavior.
+                                    "filename": os.path.relpath(full_path, root_path).replace("\\", "/"),
+                                    "size": stat.st_size,
+                                    "mtime": stat.st_mtime
+                                }
+                            except OSError:
+                                continue
+            except Exception as e:
+                print(f"[AutoMatch] Error scanning {type_key}: {e}")
                 pass
 
         # B. 遍历现有索引，标记移除和保持

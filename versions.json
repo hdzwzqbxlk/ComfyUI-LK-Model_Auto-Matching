@@ -1,6 +1,15 @@
 {
     "versions": [
         {
+            "version": "1.4.1",
+            "date": "2026-01-31",
+            "changes": [
+                "Fix: Resolved issue where non-model files (images, text) were incorrectly matched",
+                "Fix: Fixed local model index not updating when files are moved or renamed (path tracking)",
+                "Improvement: Enhanced robustness of file monitoring events"
+            ]
+        },
+        {
             "version": "1.4.0",
             "date": "2026-01-22",
             "changes": [
