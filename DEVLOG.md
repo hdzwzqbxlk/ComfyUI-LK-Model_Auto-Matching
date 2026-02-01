@@ -1,8 +1,30 @@
 # ComfyUI-LK-Model_Auto-Matching 开发日志
 
-> 最后更新: 2026-02-01 | 版本: v3.0.1
+> 最后更新: 2026-02-01 | 版本: v3.1.0
 
 ---
+
+## 🚀 v3.1.0 - 本地数据库架构升级 (2026-02-01)
+
+### 🔥 核心架构变革
+1.  **SQLite 本地数据库引擎 (`core/database.py`)**:
+    -   **抛弃硬编码**: 将原有的 `MODEL_ALIASES` 和 `COMFYUI_POPULAR_MODELS` 字典完全迁移至 `core/data/models.db` (SQLite) 中。
+    -   **Schema 设计**: 实现了 `models` (模型实体), `file_hashes` (哈希映射), `aliases` (别名映射) 三表结构，支持更复杂的关联查询。
+    -   **优势**: 实现了数据与代码分离，支持动态更新，且查询速度为 O(1)。
+
+2.  **离线索引构建 (`scripts/fetch_top_models.py`)**:
+    -   新增脚本支持从 Civitai API 批量拉取热门模型数据并存入本地数据库。
+    -   **反爬增强**: `fetch_top_models.py` 集成了 `curl_cffi`，模拟 Chrome 120 指纹，有效绕过 Cloudflare 403 拦截，确保数据获取的稳定性。
+
+3.  **查询逻辑重构 (`core/utils.py`)**:
+    -   升级 `lookup_popular_model` 方法，**优先查询本地数据库**。
+    -   如果数据库未命中，自动回退到旧版字典匹配，确保兼容性。
+    -   自动解析数据库中的 `description` 字段提取 HuggingFace Repo ID。
+
+### 🛠 技术细节
+-   **依赖更新**: 引入 `curl_cffi` 用于对抗反爬。
+-   **数据迁移**: 实现了 `ModelDatabase.populate_from_json()` 方法，在初始化时自动将旧 JSON 数据迁移至 SQLite。
+-   **项目结构**: 新增 `core/data/` 目录用于存放数据库文件。
 
 ## 🚀 v3.0.1 - Civitai 哈希匹配与递归搜索 (2026-02-01)
 
