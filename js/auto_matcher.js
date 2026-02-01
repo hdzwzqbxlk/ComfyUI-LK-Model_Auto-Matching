@@ -297,7 +297,7 @@ async function showSettingsDialog() {
     input.placeholder = "Paste your API Key here...";
     input.style.width = "100%";
     input.style.boxSizing = "border-box";
-    input.style.padding = "10px 12px";
+    input.style.padding = "10px 40px 10px 12px"; // Extra padding for eye icon
     input.style.background = "rgba(0, 0, 0, 0.3)";
     input.style.border = "1px solid #444";
     input.style.color = "#eee";
@@ -312,6 +312,40 @@ async function showSettingsDialog() {
     };
     input.onblur = () => input.style.borderColor = "#444";
     inputContainer.appendChild(input);
+
+    // Eye Toggle Button
+    const toggleBtn = document.createElement("button");
+    toggleBtn.innerHTML = "👁️";
+    toggleBtn.style.position = "absolute";
+    toggleBtn.style.right = "8px";
+    toggleBtn.style.top = "50%";
+    toggleBtn.style.transform = "translateY(-50%)";
+    toggleBtn.style.background = "transparent";
+    toggleBtn.style.border = "none";
+    toggleBtn.style.color = "#888";
+    toggleBtn.style.cursor = "pointer";
+    toggleBtn.style.fontSize = "16px";
+    toggleBtn.style.padding = "4px";
+    toggleBtn.style.display = "flex";
+    toggleBtn.style.alignItems = "center";
+    toggleBtn.style.justifyContent = "center";
+    toggleBtn.title = "Show/Hide API Key";
+
+    toggleBtn.onmouseover = () => toggleBtn.style.color = "#ccc";
+    toggleBtn.onmouseout = () => toggleBtn.style.color = "#888";
+
+    toggleBtn.onclick = () => {
+        if (input.type === "password") {
+            input.type = "text";
+            toggleBtn.innerHTML = "👀"; // Open eye looks active
+            toggleBtn.style.color = "#64b5f6";
+        } else {
+            input.type = "password";
+            toggleBtn.innerHTML = "👁️"; // Closed/Normal eye
+            toggleBtn.style.color = "#888";
+        }
+    };
+    inputContainer.appendChild(toggleBtn);
     formGroup.appendChild(inputContainer);
 
     const helpLink = document.createElement("a");
