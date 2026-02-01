@@ -80,7 +80,8 @@ class CivitaiHashProvider(BaseProvider):
                 file_hash = self._hash_cache[file_path]
             else:
                 print(f"[CivitaiHash] Calculating SHA256 for: {original_filename}")
-                file_hash = self.calculate_sha256(file_path)
+                # [Optimization] Run hashing in a separate thread to avoid blocking the Event Loop
+                file_hash = await asyncio.to_thread(self.calculate_sha256, file_path)
                 self._hash_cache[file_path] = file_hash
                 print(f"[CivitaiHash] Hash: {file_hash[:16]}...")
             
