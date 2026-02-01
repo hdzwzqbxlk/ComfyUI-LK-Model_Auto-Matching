@@ -21,4 +21,31 @@
 *   **Tests**: Added persistent verification scripts (`scripts/verify_*.py`) to CI/CD pipeline.
 
 ## [3.1.0] - 2026-01-30
-*   Initial release of Database Backend and Race Mode Search.
+### 🔥 Core Architecture
+*   **Local SQLite Database**: Replaced hardcoded dictionaries with `core/data/models.db` (SQLite) for O(1) queries and dynamic updates.
+*   **Offline Indexing**: Added `scripts/fetch_top_models.py` to fetch top Civitai models into local DB.
+*   **Anti-Bot**: Integrated `curl_cffi` to bypass Cloudflare 403 on Civitai/Liblib.
+
+## [3.0.1] - 2026-01-25
+### ✨ Features
+*   **Civitai Hash Matching**: Implemented SHA256 based matching for 100% accuracy on Civitai models.
+*   **Recursive Search**: HuggingFace provider now searches subdirectories (up to depth 3).
+*   **UI Fix**: Fixed "Close Button" being obscured by content (Sticky positioning).
+
+## [3.0.0] - 2026-01-20
+### 🚀 Major Algorithm Update
+*   **Direct API Integration**: Replaced Google Scraping with direct HuggingFace Hub API calls for stability.
+*   **RapidFuzz**: Replaced custom similarity logic with `rapidfuzz` library, reducing matching time from minutes to milliseconds.
+*   **Race Mode**: Concurrent searching across multiple providers (Civitai, HF, Liblib) with "fastest win" strategy.
+
+## [1.4.0] - 2026-01-15
+### 🌐 Platform Support
+*   **Liblib Support**: Added native search provider for Liblib.art.
+*   **Chinese Optimization**: Improved tokenizer to extract English core terms from Chinese filenames (e.g. "哪吒Flux" -> "Flux").
+*   **Filtering**: Added strict file extension filtering in Scanner.
+
+## [1.3.1] - 2026-01-10
+### 🧠 Deep Tokenization
+*   **Smart Splitting**: Handles camelCase and alphanumeric concatenation (e.g. `wan22Remix` -> `wan 22 Remix`).
+*   **GGUF Support**: Enhanced quantization detection (`Q4_K_M`, `IQ4_NL`) and matching logic.
+
