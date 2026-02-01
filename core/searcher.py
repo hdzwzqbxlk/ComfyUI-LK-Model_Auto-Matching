@@ -16,9 +16,9 @@ except ImportError:
 class BaseProvider:
     def __init__(self, config=None):
         self.config = config or {}
-        # Chrome 120 impersonation for Anti-Detect
-        # curl_cffi supports this natively, works on Py3.8+ Windows/Linux/Mac
-        self.impersonate = "chrome120"
+        # Update to newer impersonation to avoid blocking
+        # curl_cffi supports chrome124 in newer versions, or verify installed version
+        self.impersonate = "chrome124"
         self.timeout = 15
 
     def _get_headers(self, referer=None):

@@ -35,6 +35,8 @@ description: Enforce QA protocol using testing-patterns and code-review-checklis
 
 ### 🟢 Phase 3: 代码提交前 (Pre-Commit)
 **Trigger**: 准备 `git verify` 和 `git push`。
+4.  **UI Consistency**:
+    *   [ ] Verify `js/auto_matcher.js` version matches `__init__.py`.
 **Required Skills**:
 1.  **`code-review-checklist` (Self-Check)**:
     *   **Correctness**: 是否处理了边缘情况？

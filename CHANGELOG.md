@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.1.3] - 2026-02-02
+
+### ⚡ Performance & Accuracy
+*   **RapidFuzz Integration**: Replaced standard `difflib` with SIMD-accelerated `rapidfuzz`. Matching performance improved by **50-100x**.
+*   **Legacy Conflict Guard**: Fixed a critical leak where fallback string matching (Legacy Mode) bypassed safety checks (e.g., I2V matching T2V). Now all matching strategies enforce strict conflict rules.
+*   **Anti-Detect**: Upgraded Civitai/Liblib scraper fingerprint to `chrome124` to reduce 403 errors.
+
+### 📚 Documentation
+*   **Refactor**: Consolidated `DEVLOG.md` into `CHANGELOG.md` for a single source of truth.
+*   **Architecture**: Renamed Whitepaper to `ARCHITECTURE.md` and linked it in README.
+
 ## [3.1.2] - 2026-02-02
 
 ### 🧠 Algorithm
