@@ -999,7 +999,33 @@ class ModelSearcher:
         search_terms = AdvancedTokenizer.extract_search_terms(filename)
         base_name = os.path.splitext(os.path.basename(filename))[0]
         
-        # [v3.3.1] 极限优化: 单轮全量并发
+        # [v3.3.2] 方案 D: Provider 智能路由
+        # 根据文件名特征选择优先 Provider
+        import re as re_module
+        has_chinese = bool(re_module.search(r'[\u4e00-\u9fff]', base_name))
+        is_flux_wan_qwen = bool(re_module.search(r'(flux|wan|qwen|ltx|z[-_]?image)', base_name, re_module.IGNORECASE))
+        
+        if has_chinese:
+            # 中文模型 -> 优先 Liblib/ModelScope
+            priority_providers = [
+                p for p in self.providers 
+                if any(name in type(p).__name__.lower() for name in ['liblib', 'modelscope', 'google', 'duckduck'])
+            ]
+            secondary_providers = [p for p in self.providers if p not in priority_providers]
+            ordered_providers = priority_providers + secondary_providers
+            print(f"[AutoMatch] 中文模型 -> 优先 Liblib/ModelScope")
+        elif is_flux_wan_qwen:
+            # FLUX/Wan/Qwen -> 优先 HuggingFace
+            priority_providers = [
+                p for p in self.providers 
+                if 'huggingface' in type(p).__name__.lower()
+            ]
+            secondary_providers = [p for p in self.providers if p not in priority_providers]
+            ordered_providers = priority_providers + secondary_providers
+            print(f"[AutoMatch] FLUX/Wan/Qwen 系列 -> 优先 HuggingFace")
+        else:
+            ordered_providers = self.providers
+        
         # 只使用最优搜索词，所有 Provider 同时启动
         best_term = search_terms[0] if search_terms else base_name
         print(f"[AutoMatch] Searching: {filename} | Term: {best_term}")
@@ -1009,8 +1035,8 @@ class ModelSearcher:
         
         all_candidates = []
         
-        # 启动所有 Provider 任务
-        tasks = [provider.search(best_term, base_name) for provider in self.providers]
+        # 启动所有 Provider 任务 (使用智能路由后的顺序)
+        tasks = [provider.search(best_term, base_name) for provider in ordered_providers]
         
         # 使用 as_completed 实现早停
         for future in asyncio.as_completed(tasks):

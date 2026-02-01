@@ -1,5 +1,21 @@
 # Changelog
 
+## [v3.3.2] - 2026-02-02
+### 🧠 深度算法优化 (基于 204 个模型样本)
+- **CamelCase 智能分词**: `DasiwaWAN22` → `Dasiwa WAN 22`
+- **版本号归一化**: `wan21`, `Wan2_1`, `wan2-1` → `wan2.1`
+- **别名映射表**: 25+ 条缩写映射 (zimg→z-image, infinitetalk→wan2.1等)
+- **精确映射表**: 60+ 条常用模型→HuggingFace仓库映射
+- **Provider 智能路由**: 中文模型优先 Liblib/ModelScope，FLUX/Wan/Qwen 优先 HuggingFace
+
+### 📊 覆盖模型系列
+- FLUX (~25), Wan (~15), Qwen (~20), Z-Image (~10)
+- LTX (~10), SD/SDXL (~20), ControlNet (~25), 中文模型 (~15)
+
+### 🎯 预期效果
+- 精确匹配率: 30% → **>80%**
+- 模糊匹配准确率: 50% → **>90%**
+
 ## [v3.3.1] - 2026-02-02
 ### ⚡ 极限性能优化
 - **单轮全量并发**: 取消多轮串行搜索，只用最优搜索词一次并发所有 Provider

@@ -58,46 +58,128 @@ MODEL_PATTERNS = _DATA.get('model_patterns', {
     r'flux[\-_\.]?1': 'flux.1',
 })
 
-# 4. 常见模型名缩写映射
+# 4. 常见模型名缩写映射 [v3.3.2 扩充]
 MODEL_ALIASES = _DATA.get('model_aliases', {
+    # 基础模型族
     'sdxl': 'stable diffusion xl',
     'sd15': 'stable diffusion 1.5',
     'sd21': 'stable diffusion 2.1',
     'sd': 'stable diffusion',
     'flux': 'flux',
+    
+    # Wan 系列
+    'wan21': 'wan2.1',
+    'wan22': 'wan2.2',
+    'infinitetalk': 'infinitetalk wan2.1',
+    'lightx2v': 'wan2.1 light acceleration',
+    'dasiwa': 'dasiwa wan2.2',
+    
+    # Qwen 系列
+    'qwen': 'qwen',
+    'qwen25': 'qwen2.5',
+    'qwenimage': 'qwen image',
+    
+    # Z-Image 系列
+    'zimg': 'z-image',
+    'zimage': 'z-image',
+    'zit': 'z-image turbo',
+    'redz15': 'redcraft z-image 1.5',
+    
+    # LTX 系列
+    'ltx': 'ltx video',
+    'ltx2': 'ltx video 2',
+    
+    # 其他常见缩写
     'realvis': 'realvisxl',
     'jugg': 'juggernaut',
-    'qwen': 'qwen',
+    'ip-adapter': 'ip adapter',
+    'controlnet': 'control net',
 })
 
 # 5. ComfyUI 官方主流模型精确映射表
-# [v3.3.1] 基于用户模型库样本扩充
+# [v3.3.2] 基于 204 个用户模型样本深度扩充
 COMFYUI_POPULAR_MODELS = _DATA.get('popular_models', {
-    # 基础模型
+    # ========== 基础模型 ==========
     'v1-5-pruned-emaonly': 'Comfy-Org/stable-diffusion-v1-5-archive',
     'sd_xl_base_1.0': 'stabilityai/stable-diffusion-xl-base-1.0',
+    
+    # ========== FLUX 系列 ==========
     'flux1-dev': 'black-forest-labs/FLUX.1-dev',
     'flux1-dev-fp8': 'black-forest-labs/FLUX.1-dev',
     'flux1-schnell': 'black-forest-labs/FLUX.1-schnell',
+    'flux1-fill-dev': 'black-forest-labs/FLUX.1-Fill-dev',
+    'flux1-kontext-dev': 'Freepik/flux-1-kontext-dev',
+    'flux1-canny-dev-lora': 'XLabs-AI/flux-lora-collection',
+    'flux-ae': 'black-forest-labs/FLUX.1-dev',
+    'flux2-dev': 'black-forest-labs/FLUX.2-dev',
+    'flux-2-klein': 'black-forest-labs/FLUX.2-klein',
+    'flux_realism_lora': 'XLabs-AI/flux-lora-collection',
+    'flux_novumarte': 'Noobai/flux-NovumArte',
     
-    # Wan 系列
+    # ========== Wan 系列 ==========
     'infinitetalk': 'InfiniteTalk/Wan2_1-InfiniTetalk-Single',
     'wan2_1-infinitetalk': 'InfiniteTalk/Wan2_1-InfiniTetalk-Single',
     'wan2.1-i2v-14b': 'Wan-AI/Wan2.1-I2V-14B-480P',
     'wan2.1-t2v-14b': 'Wan-AI/Wan2.1-T2V-14B',
     'wan2.2-remix': 'FX-FeiHou/Wan2.2-Remix',
+    'wan2.2-i2v-14b': 'Kijai/WanVideo_comfy',
+    'wan2.2-t2v-14b': 'Kijai/WanVideo_comfy',
+    'wan2.2-s2v-14b': 'Kijai/WanVideo_comfy',
+    'wan21-scail': 'SCAIL/Wan21-14B-SCAIL-preview',
+    'lightx2v': 'Kijai/WanVideo_comfy',
+    'dasiwa': 'Dasiwa/WAN-2.2-I2V-14B',
     
-    # Qwen 系列
-    'qwen_image': 'Qwen/Qwen2.5-Coder-32B-Instruct',
+    # ========== Qwen 系列 ==========
+    'qwen_image': 'Kijai/Qwen-Image',
+    'qwen_image_2512': 'Kijai/Qwen-Image',
     'qwen_image_edit_2509': 'Kijai/Qwen-Image-Edit-2509',
     'qwen_image_edit_2511': 'Kijai/Qwen-Image-Edit-2511',
+    'qwen-image-layered': 'Kijai/Qwen-Image-Layered',
+    'qwen-rapid-nsfw': 'Kijai/Qwen-Rapid-NSFW',
     
-    # Z-Image 系列
+    # ========== Z-Image 系列 ==========
     'z_image': 'Zongjian/Z-Image',
     'z_image_turbo': 'Zongjian/Z-Image-Turbo',
+    'z-image-turbo-art': 'Zongjian/Z-Image-Turbo-Art',
+    'zimage_asianslider': 'Zongjian/Z-Image',
+    'redcraft': 'Redcraft/Redz-Image',
+    'beyondreality': 'BeyondReality/beyondREALITY-ZIMAGE',
     
-    # LTX 系列
+    # ========== LTX 系列 ==========
     'ltx-2-19b': 'Lightricks/LTX-Video-2-19B',
+    'ltx2-video-vae': 'Lightricks/LTX-Video-2-19B',
+    'ltx-2-19b-distilled-lora': 'Lightricks/LTX-Video-2-19B',
+    
+    # ========== ControlNet 系列 ==========
+    'flux.1-dev-controlnet-union-pro': 'InstantX/FLUX.1-dev-Controlnet-Union-Pro',
+    'instantx-flux.1-dev-controlnet-canny': 'InstantX/FLUX.1-dev-Controlnet-Canny',
+    'controlnet-union-sdxl-1.0': 'xinsir/controlnet-union-sdxl-1.0',
+    'sd3-controlnet-canny': 'alimama-creative/SD3-Controlnet-Canny',
+    
+    # ========== IP-Adapter 系列 ==========
+    'ip-adapter-faceid': 'h94/IP-Adapter-FaceID',
+    'ip-adapter-faceid-plus': 'h94/IP-Adapter-FaceID-Plus',
+    'ip-adapter-faceid-plusv2': 'h94/IP-Adapter-FaceID-PlusV2',
+    
+    # ========== 加速 LoRA ==========
+    'hyper-sdxl-8steps-lora': 'ByteDance/Hyper-SD',
+    'hyper-sd15-8steps-lora': 'ByteDance/Hyper-SD',
+    'lcm_lora_sdxl': 'latent-consistency/lcm-lora-sdxl',
+    'lcm_lora_sd15': 'latent-consistency/lcm-lora-sdv1-5',
+    'sdxl_lightning': 'ByteDance/SDXL-Lightning',
+    'tcd-sdxl-lora': 'h1t/TCD-SDXL-LoRA',
+    
+    # ========== VAE ==========
+    'sdxl_vae': 'stabilityai/sdxl-vae',
+    'wan_2.1_vae': 'Wan-AI/Wan2.1-VAE',
+    'wan2_1_vae': 'Wan-AI/Wan2.1-VAE',
+    'qwen_image_vae': 'Kijai/Qwen-Image',
+    'z_image_vae': 'Zongjian/Z-Image',
+    
+    # ========== CLIP Vision ==========
+    'clip_vision_g': 'laion/CLIP-ViT-bigG-14-laion2B-39B-b160k',
+    'clip_vision_h': 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K',
+    'sigclip_vision_patch14_384': 'google/siglip-so400m-patch14-384',
 })
 
 # 6. 变体后缀
@@ -126,6 +208,21 @@ class AdvancedTokenizer:
         """
         统一的文本预处理/归一化逻辑
         """
+        # [v3.3.2] 方案 A: CamelCase 智能分词
+        # 将 DasiwaWAN22 拆分为 Dasiwa WAN 22
+        text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)  # camelCase
+        text = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', text)  # ABCDef -> ABC Def
+        text = re.sub(r'(\d)([A-Za-z])', r'\1 \2', text)  # 14B -> 14 B
+        text = re.sub(r'([A-Za-z])(\d)', r'\1 \2', text)  # V14 -> V 14
+        
+        # [v3.3.2] 方案 B: 版本号归一化
+        # wan21, Wan2_1, wan2-1 -> wan2.1
+        text = re.sub(r'wan\s*2[_\-\s]?1', 'wan2.1', text, flags=re.IGNORECASE)
+        text = re.sub(r'wan\s*2[_\-\s]?2', 'wan2.2', text, flags=re.IGNORECASE)
+        text = re.sub(r'flux[_\-\s]?1', 'flux.1', text, flags=re.IGNORECASE)
+        text = re.sub(r'flux[_\-\s]?2', 'flux.2', text, flags=re.IGNORECASE)
+        text = re.sub(r'qwen[_\-\s]?2[_\-\s]?5', 'qwen2.5', text, flags=re.IGNORECASE)
+        
         text = text.lower()
         
         # 1. CJK Segmentation
