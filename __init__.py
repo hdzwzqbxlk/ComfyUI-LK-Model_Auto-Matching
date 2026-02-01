@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.1.4" # Concurrent Search, Usage Reminder, Missing List
+__version__ = "3.2.0" # Deep Matching Optimization: Format Block + Speed
 __author__ = "LK"
 
 # 初始化核心组件

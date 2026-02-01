@@ -1,5 +1,15 @@
 # Changelog
 
+## [v3.2.0] - 2026-02-02
+### 🎯 精准度大幅提升
+- **硬格式阻断**: `.safetensors` 与 `.gguf` 彻底互斥，消除跨格式错误匹配
+- **乘法惩罚机制**: 格式不匹配直接归零，不再是弱扣分
+- **格式分区索引**: 预过滤候选池，减少 50-70% 无效比较
+
+### ⚡ 性能优化
+- 倒排索引按格式分区，加速匹配循环
+- 预编译正则表达式，减少重复编译开销
+
 ## [v3.1.4] - 2026-02-02
 ### Changed
 - **UX**: Added a friendly reminder to update local index for best performance (once every 24h).

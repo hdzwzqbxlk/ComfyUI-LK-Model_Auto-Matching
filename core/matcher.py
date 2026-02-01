@@ -36,14 +36,27 @@ class ModelMatcher:
         self.model_list = list(self.scanner.get_all_models())
         self.inverted_index = {}
         
+        # [v3.2.0] Phase 3: 格式分区索引
+        self.format_indices = {
+            "gguf": set(),
+            "standard": set(),
+            "other": set()
+        }
+        
         for idx, info in enumerate(self.model_list):
             filename = info["filename"]
             
-            # 使用 AdvancedTokenizer
-            # 1. 对完整文件名 (无后缀) 分词
-            base_tokens = AdvancedTokenizer.tokenize(self._get_basename(filename))
+            # 1. 格式分区
+            ext = os.path.splitext(filename)[1].lower()
+            if ext == ".gguf":
+                self.format_indices["gguf"].add(idx)
+            elif ext in {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}:
+                self.format_indices["standard"].add(idx)
+            else:
+                self.format_indices["other"].add(idx)
             
-            # 2. 对路径进行简单分词 (可选，防止干扰太大暂不深入)
+            # 2. Token 倒排索引
+            base_tokens = AdvancedTokenizer.tokenize(self._get_basename(filename))
             
             for token in base_tokens:
                 if token not in self.inverted_index:
@@ -171,6 +184,26 @@ class ModelMatcher:
         t_lower = target_name.lower()
         c_lower = candidate_name.lower()
         
+        # [v3.2.0] Phase 1: HARD FORMAT BLOCK
+        # .gguf and .safetensors/.ckpt are fundamentally different ecosystems
+        FORMAT_GROUPS = {
+            "gguf": {".gguf"},
+            "standard": {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}
+        }
+        
+        def get_format_group(name):
+            ext = os.path.splitext(name)[1].lower()
+            for group, exts in FORMAT_GROUPS.items():
+                if ext in exts:
+                    return group
+            return "other"
+        
+        t_group = get_format_group(target_name)
+        c_group = get_format_group(candidate_name)
+        
+        if t_group != "other" and c_group != "other" and t_group != c_group:
+            return True  # HARD CONFLICT: gguf <-> standard
+        
         # 1. Critical Token Mutual Exclusion
         # If one has it, the other MUST have it.
         # Format: (TokenString, IsStrictWordBoundary)
@@ -244,6 +277,18 @@ class ModelMatcher:
             if token in self.inverted_index:
                 candidate_indices.update(self.inverted_index[token])
         
+        # [v3.2.0] Phase 3: 格式预过滤
+        target_ext = os.path.splitext(current_val)[1].lower()
+        if target_ext == ".gguf":
+            format_pool = self.format_indices.get("gguf", set())
+        elif target_ext in {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}:
+            format_pool = self.format_indices.get("standard", set())
+        else:
+            format_pool = None  # 不过滤
+        
+        if format_pool is not None:
+            candidate_indices = candidate_indices.intersection(format_pool)
+        
         if not candidate_indices:
             return None
 
@@ -297,11 +342,12 @@ class ModelMatcher:
             
             base_final = (score / max_possible_score) * 100
             
-            # 2. Penalties
+            # 2. [v3.2.0] Multiplicative Format Penalty (Phase 2)
+            # Format mismatch = hard zero, not weak penalty
             cand_fmt = AdvancedTokenizer.get_model_format(info["filename"])
-            format_penalty = 0.0
+            format_multiplier = 1.0
             if target_fmt != "other" and cand_fmt != "other" and target_fmt != cand_fmt:
-                format_penalty = 2.0
+                format_multiplier = 0.0  # HARD ZERO
             
             # 3. Type Bonuses
             type_score = 0.0
@@ -310,7 +356,7 @@ class ModelMatcher:
                 if cand_type in expected_types: type_score = 30.0
                 else: type_score = -50.0
             
-            final_score = base_final - format_penalty + type_score
+            final_score = (base_final + type_score) * format_multiplier
             
             if final_score > best_score:
                 best_score = final_score
