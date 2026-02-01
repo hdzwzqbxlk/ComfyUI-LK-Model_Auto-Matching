@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.0.3" # Fix: Close Btn, Civitai Headers, Local Priority
+__version__ = "3.1.0" # Database Backend, Offline Indexing, Anti-Bot
 __author__ = "LK"
 
 # 初始化核心组件
