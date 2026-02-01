@@ -102,6 +102,9 @@ class ModelMatcher:
                 elif ".safetensors" in current_val or ".ckpt" in current_val: target_fmt = "checkpoint"
 
             if not best_match:
+                best_token_score = 0.0
+                token_candidate_info = None
+                
                 target_tokens = AdvancedTokenizer.tokenize(target_base)
                 candidate_indices = set()
                 for token in target_tokens:

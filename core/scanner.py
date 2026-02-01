@@ -231,5 +231,15 @@ class ModelIndex:
     def get_all_models(self):
         return self.data["models"].values()
 
+    def find_local_file(self, filename):
+        """
+        根据文件名查找本地文件的完整路径 (用于 Hash 匹配)
+        """
+        # 1. 尝试精确文件名匹配
+        for info in self.data["models"].values():
+            if info["filename"] == filename or os.path.basename(info["path"]) == filename:
+                return info["path"]
+        return None
+
 class ModelScanner(ModelIndex):
     pass
