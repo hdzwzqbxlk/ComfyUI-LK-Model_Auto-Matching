@@ -112,31 +112,30 @@ class ModelMatcher:
                 token_candidate_info = None
                 
                 target_tokens = AdvancedTokenizer.tokenize(target_base)
-                candidate_indices = set()
-                for token in target_tokens:
-                    if token in self.inverted_index:
-                        candidate_indices.update(self.inverted_index[token])
+                # [v3.1.0] Category Optimization
+                # Map ComfyUI widget names to internal folder types
+                WIDGET_TO_TYPE = {
+                    "ckpt_name": ["checkpoints", "unet", "diffusion_models"],
+                    "lora_name": ["loras"],
+                    "vae_name": ["vae"],
+                    "clip_name": ["clip"],
+                    "control_net_name": ["controlnet", "t2i_adapter"],
+                    "upscale_model_name": ["upscale_models"],
+                    "embeddings_name": ["embeddings"],
+                    "style_model_name": ["style_models"],
+                    "hypernetwork_name": ["hypernetworks"],
+                    "gligen_name": ["gligen"],
+                }
                 
-                # [v2.0] Weighted Scoring Algorithm
-                import re
-                
-                # 定义权重
-                W_ANCHOR = 10.0   # 强语义锚点 (Wan2.1, Pony, SDXL)
-                W_VERSION = 5.0   # 版本号 (v1.5, 2.1)
-                W_NORMAL = 1.0    # 普通词
-                W_NOISE = 0.1     # 噪音 (fp16, pruned)
-
-                # 识别 Target 中的关键 Token
-                target_anchors = {t for t in target_tokens if re.match(r"(?i)^(wan\d|sdxl|pony|flux)", t)}
-                target_versions = {t for t in target_tokens if re.match(r"(?i)^(v\d|\d+\.\d+)", t)}
-                
-                # 获取噪音集合 (引用 utils 中的常量)
-                from .utils import NOISE_SUFFIXES
+                widget_name = item.get("widget_name", "")
+                expected_types = WIDGET_TO_TYPE.get(widget_name, [])
 
                 if candidate_indices:
                     for idx in candidate_indices:
                         candidate_info = self.model_list[idx]
                         cand_filename = candidate_info["filename"]
+                        cand_type = candidate_info.get("type", "unknown")
+                        
                         cand_base = self._get_basename(cand_filename)
                         cand_tokens = set(AdvancedTokenizer.tokenize(cand_base))
                         
@@ -147,9 +146,18 @@ class ModelMatcher:
                         format_penalty = 0.0
                         if target_fmt != "other" and cand_fmt != "other":
                              if target_fmt != cand_fmt:
-                                 # 格式不同扣分 (但不完全排除，因为 float16 vs float32 可能是同一模型)
                                  format_penalty = 2.0 
                         
+                        # [Category Check] Type Match Bonus/Penalty
+                        type_score = 0.0
+                        if expected_types:
+                             if cand_type in expected_types:
+                                 type_score = 30.0 # Huge bonus for correct folder
+                             else:
+                                 # Penalty for wrong folder (e.g. looking for lora but found checkpoint)
+                                 # Unless it's "unknown" or generic
+                                 type_score = -50.0 
+
                         # 计算加权分数
                         score = 0.0
                         
@@ -175,22 +183,32 @@ class ModelMatcher:
                         
                         if max_possible_score > 0:
                             # 转换为 0-100 分
-                            final_score = (score / max_possible_score) * 100
-                            final_score -= format_penalty
+                            # Base Score (0-100)
+                            base_final = (score / max_possible_score) * 100
+                            
+                            # Apply Penalties & Bonuses
+                            final_score = base_final - format_penalty + type_score
+                            
+                            # Clamping (optional, but good for sanity)
+                            # Let it go > 100 if it's a perfect type match, to override others
                         else:
                             final_score = 0
+                        
+                        # Strict Type Constraint: If score became negative due to type mismatch, ignore it
+                        if final_score < 0:
+                            continue
 
                         if final_score > best_token_score:
                             best_token_score = final_score
                             token_candidate_info = candidate_info
                 
                 # v2.0 Strict Threshold: 提高阈值，因为加权算法更精准
+                # With type bonus (+30), a decent match (60) becomes 90.
+                # A mismatch (-50) ensures it fails.
                 if best_token_score >= 60.0:
                     best_match = token_candidate_info
 
             # Priority 4: Variant Match (Cross-Quantization)
-            # e.g., "Qwen...bf16.safetensors" vs "Qwen...fp16.safetensors"
-            # BUT: Strict format check (GGUF != Safetensors)
             if not best_match:
                 # 提取核心 Token (去除量化、格式后缀)
                 target_core = AdvancedTokenizer.get_core_tokens(target_base)
@@ -208,6 +226,12 @@ class ModelMatcher:
                     if variant_indices:
                         for idx in variant_indices:
                             candidate_info = self.model_list[idx]
+                            
+                            # [Variant] Also check categories
+                            cand_type = candidate_info.get("type", "unknown")
+                            if expected_types and cand_type not in expected_types:
+                                continue # Variant match MUST be same category
+                                
                             candidate_filename = candidate_info["filename"]
                             
                             # Strict Format Check
