@@ -329,19 +329,57 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             if not keywords:
                 return []
             
-            # 智能仓库检测
+            # [v3.3.2] 智能仓库检测 (基于 Kijai/WanVideo_comfy 结构分析)
             base_lower = original_filename.lower()
             priority_repos = []
             
-            # WAN 视频模型 -> Kijai/WanVideo_comfy
-            if 'wan' in base_lower:
+            # === Kijai/WanVideo_comfy 子目录 ===
+            # 仓库子目录: InfiniteTalk, Lightx2v, Qwen, SCAIL, Wan22-Turbo etc.
+            if any(kw in base_lower for kw in ['wan', 'infinitetalk', 'lightx2v', 'phantom', 'anisora', 
+                                                'vace', 'accvid', 'causvid', 'movii', 'flf2v', 'magref']):
                 priority_repos.append("Kijai/WanVideo_comfy")
-            # Hunyuan -> Kijai/HunyuanVideo_comfy  
+            
+            # === Qwen 系列 ===
+            if any(kw in base_lower for kw in ['qwen', 'qwen-image', 'qwen-edit']):
+                priority_repos.append("Kijai/WanVideo_comfy")  # Qwen 也在 Kijai 仓库
+                priority_repos.append("Kijai/flux-fp8")
+                
+            # === Hunyuan ===
             if 'hunyuan' in base_lower:
                 priority_repos.append("Kijai/HunyuanVideo_comfy")
-            # LTX -> Kijai
+                
+            # === LTX ===
             if 'ltx' in base_lower:
                 priority_repos.append("Kijai/LTXVideo_comfy")
+                priority_repos.append("Lightricks/LTX-Video")
+                
+            # === Z-Image ===
+            if any(kw in base_lower for kw in ['z-image', 'zimage', 'z_image']):
+                priority_repos.append("Zongjian/Z-Image")
+                
+            # === FLUX ===
+            if 'flux' in base_lower:
+                priority_repos.append("black-forest-labs/FLUX.1-dev")
+                priority_repos.append("Kijai/flux-fp8")
+                priority_repos.append("XLabs-AI/flux-controlnet-collections")
+                
+            # === Comfy-Org 官方 ===
+            if any(kw in base_lower for kw in ['sd1.5', 'sd15', 'v1-5', 'stable-diffusion']):
+                priority_repos.append("Comfy-Org/stable-diffusion-v1-5-archive")
+                priority_repos.append("Comfy-Org/stable-diffusion-2-1-archive")
+                
+            # === ByteDance 加速 ===
+            if any(kw in base_lower for kw in ['hyper', 'lightning']):
+                priority_repos.append("ByteDance/Hyper-SD")
+                priority_repos.append("ByteDance/SDXL-Lightning")
+                
+            # === IP-Adapter ===
+            if 'ip-adapter' in base_lower or 'ipadapter' in base_lower:
+                priority_repos.append("h94/IP-Adapter")
+                priority_repos.append("h94/IP-Adapter-FaceID")
+                
+            # 去重
+            priority_repos = list(dict.fromkeys(priority_repos))
                 
             headers = self._get_headers("https://huggingface.co")
             
@@ -443,8 +481,21 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                     # 智能剪枝：只扫描与关键词相关的目录
                     dir_lower = item_path.lower()
                     should_scan = any(kw in dir_lower for kw in keywords)
-                    # 也扫描常见目录名
-                    common_dirs = {'lora', 'loras', 'models', 'checkpoints', 'weights'}
+                    
+                    # [v3.3.2] 扩充常见目录名 (基于 Kijai/WanVideo_comfy 结构)
+                    # 28 个子目录: InfiniteTalk, Lightx2v, Qwen, SCAIL, Wan22-Turbo 等
+                    common_dirs = {
+                        # 通用模型目录
+                        'lora', 'loras', 'models', 'checkpoints', 'weights', 'unet',
+                        'vae', 'clip', 'controlnet', 'embeddings',
+                        # Kijai/WanVideo_comfy 子目录
+                        'infinitetalk', 'lightx2v', 'qwen', 'scail', 'wan22-turbo',
+                        'fun', 'fastwanm', 'pusa', 'lynx', 'skyreels', 'humo',
+                        'bindweave', 'camclonemaster', 'chronoedit', 'echoshot',
+                        'fantasyportrait', 'flashvsr', 'kaleido', 'longxie2',
+                        'mtvcrafter', 'onetoallanimation', 'ovi', 'steadydancer',
+                        'unilumos', 'video-as-prompt', 'wanmove', 'wan22_funreward',
+                    }
                     if any(cd in dir_lower for cd in common_dirs):
                         should_scan = True
                     
