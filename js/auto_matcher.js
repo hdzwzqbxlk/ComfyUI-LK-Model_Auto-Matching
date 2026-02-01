@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const VERSION = "1.4.5";
+const VERSION = "2.0.1";
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
@@ -465,22 +465,24 @@ async function runAutoMatch(btn, ignoreCache = false) {
         return;
     }
 
-    const missingItems = findMissingModels();
+    // Debug log for user transparency - MOVED inside try
 
-    // Debug log for user transparency
-    console.log("[LK Auto Match] Scan finished. Missing items:", missingItems);
-
-    if (missingItems.length === 0) {
-        app.ui.dialog.show("✨ 太棒了！未检测到丢失模型。\n(所有模型路径均有效)");
-        return;
-    }
-
+    // UI Reset
     const originalHTML = btn.innerHTML;
     btn.innerHTML = `⏳ Scanning...`;
     btn.disabled = true;
     btn.style.cursor = "wait";
 
     try {
+        const missingItems = findMissingModels();
+        console.log("[LK Auto Match] Scan finished. Missing items:", missingItems);
+
+        if (missingItems.length === 0) {
+            app.ui.dialog.show("✨ 太棒了！未检测到丢失模型。\n(所有模型路径均有效)");
+            // Return execution but restore button in finally
+            return;
+        }
+
         // 1. 本地匹配
         const matchResponse = await api.fetchApi("/auto-matcher/match", {
             method: "POST",
@@ -902,6 +904,7 @@ function findMissingModels() {
 
                     // FIX: Use ALLOWLIST (Robust) instead of Blocklist
                     // Only process files that are actually models.
+                    const strVal = String(value).toLowerCase(); // Fix: Define strVal
                     const validModelExts = [
                         ".safetensors", ".ckpt", ".pt", ".pth", ".bin",
                         ".gguf", ".onnx", ".pkl", ".sft"

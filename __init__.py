@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "1.4.5" # Refactor: Robust Allowlist Filtering
+__version__ = "2.0.1" # Hotfix: Frontend JS crash fix
 __author__ = "LK"
 
 # 初始化核心组件

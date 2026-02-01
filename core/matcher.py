@@ -108,29 +108,76 @@ class ModelMatcher:
                     if token in self.inverted_index:
                         candidate_indices.update(self.inverted_index[token])
                 
-                best_token_score = 0.0
-                token_candidate_info = None
+                # [v2.0] Weighted Scoring Algorithm
+                import re
+                
+                # 定义权重
+                W_ANCHOR = 10.0   # 强语义锚点 (Wan2.1, Pony, SDXL)
+                W_VERSION = 5.0   # 版本号 (v1.5, 2.1)
+                W_NORMAL = 1.0    # 普通词
+                W_NOISE = 0.1     # 噪音 (fp16, pruned)
+
+                # 识别 Target 中的关键 Token
+                target_anchors = {t for t in target_tokens if re.match(r"(?i)^(wan\d|sdxl|pony|flux)", t)}
+                target_versions = {t for t in target_tokens if re.match(r"(?i)^(v\d|\d+\.\d+)", t)}
+                
+                # 获取噪音集合 (引用 utils 中的常量)
+                from .utils import NOISE_SUFFIXES
 
                 if candidate_indices:
                     for idx in candidate_indices:
                         candidate_info = self.model_list[idx]
+                        cand_filename = candidate_info["filename"]
+                        cand_base = self._get_basename(cand_filename)
+                        cand_tokens = set(AdvancedTokenizer.tokenize(cand_base))
                         
                         # [Strict Check] Format Compatibility
-                        cand_fmt = AdvancedTokenizer.get_model_format(candidate_info["filename"])
-                        if target_fmt != "other" and cand_fmt != "other":
-                            if target_fmt != cand_fmt:
-                                continue
-
-                        candidate_base = self._get_basename(candidate_info["filename"])
+                        cand_fmt = AdvancedTokenizer.get_model_format(cand_filename)
                         
-                        score = AdvancedTokenizer.calculate_similarity(target_base, candidate_base)
-                        if score > best_token_score:
-                            best_token_score = score
+                        # 格式不匹配惩罚 (Penalty)
+                        format_penalty = 0.0
+                        if target_fmt != "other" and cand_fmt != "other":
+                             if target_fmt != cand_fmt:
+                                 # 格式不同扣分 (但不完全排除，因为 float16 vs float32 可能是同一模型)
+                                 format_penalty = 2.0 
+                        
+                        # 计算加权分数
+                        score = 0.0
+                        
+                        for token in target_tokens:
+                            if token in cand_tokens:
+                                if token in target_anchors:
+                                    score += W_ANCHOR
+                                elif token in target_versions:
+                                    score += W_VERSION
+                                elif token in NOISE_SUFFIXES:
+                                    score += W_NOISE
+                                else:
+                                    score += W_NORMAL
+                        
+                        # 归一化 (Normalization)
+                        # 基于 Target 的最大可能得分
+                        max_possible_score = 0.0
+                        for token in target_tokens:
+                            if token in target_anchors: max_possible_score += W_ANCHOR
+                            elif token in target_versions: max_possible_score += W_VERSION
+                            elif token in NOISE_SUFFIXES: max_possible_score += W_NOISE
+                            else: max_possible_score += W_NORMAL
+                        
+                        if max_possible_score > 0:
+                            # 转换为 0-100 分
+                            final_score = (score / max_possible_score) * 100
+                            final_score -= format_penalty
+                        else:
+                            final_score = 0
+
+                        if final_score > best_token_score:
+                            best_token_score = final_score
                             token_candidate_info = candidate_info
-                    
-                    # Strict threshold for fuzzy
-                    if best_token_score >= 0.75:
-                        best_match = token_candidate_info
+                
+                # v2.0 Strict Threshold: 提高阈值，因为加权算法更精准
+                if best_token_score >= 60.0:
+                    best_match = token_candidate_info
 
             # Priority 4: Variant Match (Cross-Quantization)
             # e.g., "Qwen...bf16.safetensors" vs "Qwen...fp16.safetensors"

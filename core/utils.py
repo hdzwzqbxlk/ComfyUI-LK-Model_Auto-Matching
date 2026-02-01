@@ -248,12 +248,31 @@ class AdvancedTokenizer:
     @staticmethod
     def tokenize(text):
         """
-        将文本拆分为 token 集合 (支持数字分离: flux1 -> flux 1)
+        将文本拆分为 token 集合 (v2.0: 语义锚点优先)
         """
         # 使用统一预处理
         text = AdvancedTokenizer._normalize_text(text)
-
+        
         tokens = []
+        
+        # [v2.0] 语义保留正则 (Semantic Preservation Regex)
+        # 强制保留: Wan2.1, SDXL, Pony, v1.5, 2.1, Flux.1, SD1.5
+        # 避免被拆分为: wan, 2, 1
+        preserve_pattern = r"(?i)\b(v\d+(\.\d+)?|sdxl|pony|wan\d*(\.\d+)?|flux[\.\-]1|sd\d+(\.\d+)?)\b"
+        
+        # 1. 提取保留词 (Preserved Semantic Tokens)
+        preserved_matches = re.finditer(preserve_pattern, text)
+        for match in preserved_matches:
+            token = match.group(0).lower()
+            tokens.append(token)
+            # 将原文中的该词替换为空格，避免重复分词
+            text = text.replace(match.group(0), " ")
+            
+        # 2. 如果是 Wan 系列，强制添加 'wan' 基础词以确保兼容性
+        for t in tokens:
+            if t.startswith("wan"):
+                tokens.append("wan")
+
         for part in text.split():
             # 4. Alias Expansion (on individual parts)
             if part in MODEL_ALIASES:
@@ -273,7 +292,7 @@ class AdvancedTokenizer:
             else:
                 tokens.append(part)
                 
-        # 6. Post-process tokens
+        # 6. Post-process tokens (Deduplicate & Clean)
         ordered_tokens = []
         seen = set()
         for t in tokens:
