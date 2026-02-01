@@ -4,6 +4,7 @@ import os
 import json
 import re
 import random
+import hashlib
 from curl_cffi.requests import AsyncSession
 from parsel import Selector
 
@@ -32,7 +33,110 @@ class BaseProvider:
             headers["Referer"] = referer
         return headers
 
+
+class CivitaiHashProvider(BaseProvider):
+    """
+    [v3.0.1] 通过 SHA256 哈希精确匹配 Civitai 模型
+    
+    Civitai 官方 API: /api/v1/model-versions/by-hash/{hash}
+    参考: ComfyUI-Lora-Manager 实现
+    
+    准确率: 100% (对于从 Civitai 下载的模型)
+    """
+    def __init__(self, config):
+        super().__init__(config)
+        self.api_url = "https://civitai.com/api/v1/model-versions/by-hash"
+        self._hash_cache = {}  # 缓存已计算的哈希
+    
+    @staticmethod
+    def calculate_sha256(file_path: str) -> str:
+        """计算文件 SHA256 哈希 (支持大文件)"""
+        sha256 = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):  # 64KB chunks
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    
+    async def search_by_hash(self, file_path: str, original_filename: str):
+        """
+        通过文件哈希精确匹配 Civitai 模型
+        
+        Args:
+            file_path: 本地文件完整路径
+            original_filename: 原始文件名
+            
+        Returns:
+            list: 匹配结果列表 (0或1个结果)
+        """
+        results = []
+        
+        if not os.path.exists(file_path):
+            print(f"[CivitaiHash] File not found: {file_path}")
+            return results
+        
+        try:
+            # 检查缓存
+            if file_path in self._hash_cache:
+                file_hash = self._hash_cache[file_path]
+            else:
+                print(f"[CivitaiHash] Calculating SHA256 for: {original_filename}")
+                file_hash = self.calculate_sha256(file_path)
+                self._hash_cache[file_path] = file_hash
+                print(f"[CivitaiHash] Hash: {file_hash[:16]}...")
+            
+            # 调用 Civitai API
+            headers = self._get_headers("https://civitai.com")
+            token = self.config.get("civitai_api_key")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            
+            url = f"{self.api_url}/{file_hash}"
+            
+            async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
+                response = await session.get(url)
+                
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        
+                        model_id = data.get("modelId")
+                        model_name = data.get("model", {}).get("name", "Unknown")
+                        version_name = data.get("name", "")
+                        
+                        # 构建下载 URL
+                        download_url = data.get("downloadUrl", "")
+                        if not download_url:
+                            # 回退到标准模型页面
+                            download_url = f"https://civitai.com/models/{model_id}"
+                        
+                        results.append({
+                            "source": "Civitai (Hash Match)",
+                            "name": f"{model_name} - {version_name}",
+                            "filename": original_filename,
+                            "url": download_url,
+                            "pageUrl": f"https://civitai.com/models/{model_id}",
+                            "score": 1.0,  # 100% 确定匹配
+                            "hash_match": True
+                        })
+                        
+                        print(f"[CivitaiHash] ✓ Exact match found: {model_name}")
+                        
+                    except Exception as e:
+                        print(f"[CivitaiHash] Parse error: {e}")
+                        
+                elif response.status_code == 404:
+                    print(f"[CivitaiHash] No match for hash (model may not be from Civitai)")
+                else:
+                    print(f"[CivitaiHash] API returned {response.status_code}")
+                    
+        except Exception as e:
+            print(f"[CivitaiHash] Error: {e}")
+        
+        return results
+
+
 class CivitaiProvider(BaseProvider):
+
     def __init__(self, config):
         super().__init__(config)
         self.api_url = "https://civitai.com/api/v1/models"
@@ -186,29 +290,92 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             
             if not keywords:
                 return []
-                
-            search_query = " ".join(keywords[:3])
             
-            print(f"[HFFileSearch] API Search: {search_query}")
+            # 多轮搜索策略：
+            # 1. 原始关键词
+            # 2. 针对 ComfyUI LoRA 的常见社区仓库关键词 (Kijai, WanVideo, comfy)
+            search_queries = [
+                " ".join(keywords[:3]),  # 原始关键词
+            ]
+            
+            # 如果文件名包含 lora 或 LoRA，添加社区仓库搜索
+            if 'lora' in base_name.lower():
+                # 常见的 ComfyUI 社区 LoRA 仓库维护者
+                community_terms = ["Kijai", "WanVideo", "comfy"]
+                # 组合: 第一个有意义的关键词 + 社区关键词
+                if keywords:
+                    for term in community_terms:
+                        search_queries.append(f"{keywords[0]} {term}")
             
             headers = self._get_headers("https://huggingface.co")
             
-            # 搜索仓库
-            encoded_query = urllib.parse.quote(search_query)
-            url = f"{self.api_url}?search={encoded_query}&limit=15"
-            
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
-                response = await session.get(url)
-                if response.status_code != 200:
-                    print(f"[HFFileSearch] API Status {response.status_code}")
-                    return []
+                all_repos = []
                 
-                try:
-                    repos = response.json()
-                except:
-                    return []
+                # 多轮搜索
+                for sq in search_queries[:3]:  # 最多3轮
+                    print(f"[HFFileSearch] API Search: {sq}")
+                    encoded_query = urllib.parse.quote(sq)
+                    url = f"{self.api_url}?search={encoded_query}&limit=10"
+                    
+                    resp = await session.get(url)
+                    if resp.status_code == 200:
+                        try:
+                            repos = resp.json()
+                            for repo in repos:
+                                if repo.get("modelId") not in [r.get("modelId") for r in all_repos]:
+                                    all_repos.append(repo)
+                        except:
+                            pass
+                    
+                    await asyncio.sleep(0.1)  # 小延迟
                 
                 original_lower = original_filename.lower()
+
+                
+                # 递归搜索子目录的辅助函数
+                async def search_directory(model_id, path=""):
+                    """递归搜索仓库的所有子目录"""
+                    try:
+                        tree_url = f"https://huggingface.co/api/models/{model_id}/tree/main"
+                        if path:
+                            tree_url += f"/{path}"
+                        
+                        await asyncio.sleep(0.15)  # 小延迟
+                        resp = await session.get(tree_url)
+                        
+                        if resp.status_code != 200:
+                            return None
+                        
+                        items = resp.json()
+                        
+                        for item in items:
+                            item_type = item.get("type", "")
+                            item_path = item.get("path", "")
+                            
+                            if item_type == "file":
+                                # 检查文件名匹配
+                                if original_lower in item_path.lower():
+                                    return {
+                                        "source": "HuggingFace (Exact File)",
+                                        "name": model_id,
+                                        "filename": item_path,
+                                        "url": f"https://huggingface.co/{model_id}/blob/main/{item_path}",
+                                        "pageUrl": f"https://huggingface.co/{model_id}/tree/main",
+                                        "score": 0.98
+                                    }
+                            elif item_type == "directory":
+                                # 递归搜索子目录 (最多3层深度)
+                                depth = item_path.count("/")
+                                if depth < 3:
+                                    result = await search_directory(model_id, item_path)
+                                    if result:
+                                        return result
+                        
+                        return None
+                    except Exception as e:
+                        print(f"[HFFileSearch] Dir search error: {e}")
+                        return None
                 
                 # 检查每个仓库
                 for repo in repos[:10]:
@@ -223,32 +390,13 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                     match_count = sum(1 for k in keywords[:3] if k.lower() in repo_name or k.lower() in model_id.lower())
                     
                     if match_count >= 2:
-                        # 高匹配度 - 尝试获取文件列表
-                        try:
-                            files_url = f"https://huggingface.co/api/models/{model_id}/tree/main"
-                            await asyncio.sleep(0.2)  # 小延迟避免触发限制
-                            
-                            files_resp = await session.get(files_url)
-                            if files_resp.status_code == 200:
-                                files_data = files_resp.json()
-                                
-                                # 检查是否有匹配的文件
-                                for item in files_data:
-                                    if item.get("type") == "file":
-                                        file_path = item.get("path", "")
-                                        if original_lower in file_path.lower():
-                                            # 精确匹配！
-                                            results.append({
-                                                "source": "HuggingFace (Exact File)",
-                                                "name": model_id,
-                                                "filename": file_path,
-                                                "url": f"https://huggingface.co/{model_id}/blob/main/{file_path}",
-                                                "pageUrl": f"https://huggingface.co/{model_id}/tree/main",
-                                                "score": 0.98
-                                            })
-                                            return results  # 找到精确匹配，立即返回
-                        except:
-                            pass
+                        # 高匹配度 - 递归搜索目录
+                        print(f"[HFFileSearch] Scanning repo: {model_id}")
+                        exact_match = await search_directory(model_id)
+                        
+                        if exact_match:
+                            results.append(exact_match)
+                            return results  # 找到精确匹配，立即返回
                         
                         # 即使没找到精确文件，仓库本身也是好候选
                         score = 0.5 + (match_count * 0.15)
@@ -609,10 +757,15 @@ class ModelSearcher:
         self.config = self.load_config()
         self.search_cache = {}
         
-        # Provider 优先级 [v3.0]:
-        # HuggingFace File Search (精确文件名匹配) > Civitai > HuggingFace API > Liblib > ModelScope > Google (兜底)
+        # Provider 优先级 [v3.0.1]:
+        # 1. CivitaiHashProvider (100% 精确匹配，需要本地文件路径)
+        # 2. HuggingFace File Search (精确文件名匹配)
+        # 3. Civitai (文本搜索) > HuggingFace API > Liblib > ModelScope > Google (兜底)
+        
+        self.hash_provider = CivitaiHashProvider(self.config)  # [v3.0.1] SHA256 精确匹配
+        
         self.providers = [
-            HuggingFaceFileSearchProvider(self.config),  # [v3.0] 新增: 精确文件名搜索 (最高优先级)
+            HuggingFaceFileSearchProvider(self.config),  # [v3.0] 精确文件名搜索
             CivitaiProvider(self.config),
             HuggingFaceProvider(self.config),
             LiblibProvider(self.config),
@@ -620,6 +773,7 @@ class ModelSearcher:
             GoogleOmniProvider(self.config),
             DuckDuckGoProvider(self.config)
         ]
+
 
 
     def load_config(self):
@@ -653,7 +807,15 @@ class ModelSearcher:
         except Exception as e:
             return False, str(e)
 
-    async def search(self, filename, ignore_cache=False):
+    async def search(self, filename, ignore_cache=False, file_path=None):
+        """
+        在线搜索模型匹配
+        
+        Args:
+            filename: 原始文件名
+            ignore_cache: 是否忽略缓存
+            file_path: [v3.0.1] 可选，本地文件完整路径 (用于 SHA256 哈希匹配)
+        """
         if not filename: return None
 
         # [Strict Filter] Verify extension
@@ -665,6 +827,18 @@ class ModelSearcher:
         if not ignore_cache and filename in self.search_cache:
             print(f"[AutoMatch] Cache Hit: {filename}")
             return self.search_cache[filename]
+        
+        # [v3.0.1] 优先尝试 SHA256 哈希匹配 (100% 精确)
+        if file_path and os.path.exists(file_path):
+            try:
+                hash_results = await self.hash_provider.search_by_hash(file_path, filename)
+                if hash_results:
+                    best = hash_results[0]
+                    print(f"[AutoMatch] ✓ Hash Match: {best['name']} (100% accurate)")
+                    self.search_cache[filename] = best
+                    return best
+            except Exception as e:
+                print(f"[AutoMatch] Hash search failed: {e}")
 
         repo_id, matched_key = AdvancedTokenizer.lookup_popular_model(filename)
         if repo_id:
@@ -684,6 +858,7 @@ class ModelSearcher:
         print(f"[AutoMatch] Searching: {filename} | Terms: {search_terms}")
         
         all_candidates = []
+
         
         # Progressive Search Strategy (Attempt up to 5 terms)
         # 1. Raw Stem -> 2. Spaced -> ... -> 5. Deep Tokenized

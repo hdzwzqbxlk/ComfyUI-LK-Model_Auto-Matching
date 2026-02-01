@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const VERSION = "3.0.0";
+const VERSION = "3.0.1";
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
@@ -578,42 +578,47 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
     content.appendChild(style);
 
 
-    // 添加右上角关闭按钮 X
+    // 添加右上角关闭按钮 X (使用 sticky 定位，滚动时保持可见)
     const xBtn = document.createElement("button");
     xBtn.innerText = "✕";
     xBtn.title = "Close";
     xBtn.style.cssText = `
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        background: transparent;
-        border: none;
-        color: rgba(255, 255, 255, 0.6);
+        position: sticky;
+        top: 0;
+        float: right;
+        background: rgba(40, 40, 40, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: rgba(255, 255, 255, 0.8);
         font-size: 16px;
         cursor: pointer;
-        z-index: 10;
+        z-index: 100;
         padding: 4px;
         border-radius: 50%;
-        width: 28px;
-        height: 28px;
+        width: 32px;
+        height: 32px;
         display: flex;
         align-items: center;
         justify-content: center;
         transition: all 0.2s ease;
+        margin-bottom: -32px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     `;
     xBtn.onmouseenter = () => {
         xBtn.style.color = "white";
-        xBtn.style.background = "rgba(255, 255, 255, 0.1)";
+        xBtn.style.background = "rgba(255, 80, 80, 0.9)";
+        xBtn.style.borderColor = "rgba(255, 100, 100, 0.5)";
     };
     xBtn.onmouseleave = () => {
-        xBtn.style.color = "rgba(255, 255, 255, 0.6)";
-        xBtn.style.background = "transparent";
+        xBtn.style.color = "rgba(255, 255, 255, 0.8)";
+        xBtn.style.background = "rgba(40, 40, 40, 0.95)";
+        xBtn.style.borderColor = "rgba(255, 255, 255, 0.15)";
     };
     xBtn.onclick = () => {
         const modal = content.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
     };
     content.appendChild(xBtn);
+
 
     // Header logic
     const totalCount = matches.length + downloadResults.length + unmatched.length;

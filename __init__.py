@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.0.0" # Fix: Tokenizer Infinite Loop
+__version__ = "3.0.1" # Civitai Hash Match
 __author__ = "LK"
 
 # 初始化核心组件

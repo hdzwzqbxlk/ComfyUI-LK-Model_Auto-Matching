@@ -1,6 +1,16 @@
 {
     "versions": [
         {
+            "version": "3.0.1",
+            "date": "2026-02-01",
+            "changes": [
+                "Major: Civitai SHA256 Hash Match (100% 精确匹配)",
+                "Feat: HuggingFace 递归子目录搜索 (最多3层)",
+                "Fix: 关闭按钮 X 滚动时固定位置 (sticky)",
+                "Feat: 多轮搜索策略支持 LoRA 社区仓库"
+            ]
+        },
+        {
             "version": "3.0.0",
             "date": "2026-02-01",
             "changes": [
