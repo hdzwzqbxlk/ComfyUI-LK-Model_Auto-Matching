@@ -112,6 +112,13 @@ class ModelMatcher:
                 token_candidate_info = None
                 
                 target_tokens = AdvancedTokenizer.tokenize(target_base)
+                
+                # [Fix] Restore missing initialization (UnboundLocalError)
+                candidate_indices = set()
+                for token in target_tokens:
+                   if token in self.inverted_index:
+                       candidate_indices.update(self.inverted_index[token])
+
                 # [v3.1.0] Category Optimization
                 # Map ComfyUI widget names to internal folder types
                 WIDGET_TO_TYPE = {
