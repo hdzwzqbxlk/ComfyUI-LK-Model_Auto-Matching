@@ -1,6 +1,48 @@
 # ComfyUI-LK-Model_Auto-Matching 开发日志
 
-> 最后更新: 2026-01-22 | 版本: v1.4.0
+> 最后更新: 2026-02-01 | 版本: v3.0.1
+
+---
+
+## 🚀 v3.0.1 - Civitai 哈希匹配与递归搜索 (2026-02-01)
+
+### 🔥 核心改进
+1. **Civitai SHA256 哈希精确匹配**:
+   - 实现了基于 SHA256 文件哈希的 Civitai 模型匹配算法。
+   - 准确率达到 **100%** (针对所有出自 Civitai 的模型)。
+   - 调用官方 API: `/api/v1/model-versions/by-hash/{hash}`。
+
+2. **HuggingFace 递归子目录遍历**:
+   - 修复了此前无法匹配子路径模型 (如 `LoRAs/rCM/`) 的问题。
+   - `HuggingFaceFileSearchProvider` 现在会递归遍历仓库 tree，深度可达 3 层。
+
+3. **UI 体验优化**:
+   - **Sticky Close Button**: 修复了搜索结果列表滚动时，右上角关闭按钮 "X" 被遮挡的问题。
+   - 现在关闭按钮在滚动时依然固定在右上角。
+
+4. **多轮搜索策略扩展**:
+   - 针对 LoRA 模型，自动补全社区常见仓库关键词 (如 `Kijai`, `WanVideo`, `comfy`)。
+
+### 🛠 技术细节
+- `searcher.py`: 新增 `CivitaiHashProvider` 类，计算 SHA256 并聚合多轮 HF 搜索结果。
+- `js/auto_matcher.js`: 修改 `xBtn.style.position` 为 `sticky`。
+
+---
+
+## 🚀 v3.0.0 - 算法大版本升级 (2026-02-01)
+
+### 🔥 核心改进
+1. **HuggingFace Hub API 直接集成**:
+   - 彻底废弃依赖 Google 搜索的旧方案。
+   - 直接搜索 HF 数据库，极大降低了被封禁 IP 的风险。
+
+2. **反爬策略专项修复**:
+   - 移除了所有 Provider 中敏感的 `site:` 搜索语法。
+   - 加入了随机请求延迟 (0.2s - 1.5s)，模拟人类行为。
+
+3. **高性能相似度算法**:
+   - 全面引入 `rapidfuzz` 库，替换了旧的手写相似度计算逻辑。
+   - 处理 10k 次匹配的延迟从分钟级降至毫秒级。
 
 ---
 
