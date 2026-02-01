@@ -363,10 +363,36 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                 priority_repos.append("Kijai/flux-fp8")
                 priority_repos.append("XLabs-AI/flux-controlnet-collections")
                 
-            # === Comfy-Org 官方 ===
+            # === Comfy-Org 官方仓库 (30个仓库) ===
+            # [v3.3.2] 完整支持 Comfy-Org 组织
             if any(kw in base_lower for kw in ['sd1.5', 'sd15', 'v1-5', 'stable-diffusion']):
                 priority_repos.append("Comfy-Org/stable-diffusion-v1-5-archive")
-                priority_repos.append("Comfy-Org/stable-diffusion-2-1-archive")
+                priority_repos.append("Comfy-Org/stable-diffusion-3.5-fp8")
+            if any(kw in base_lower for kw in ['wan2.1', 'wan21', 'wan_2.1', 'wan_2_1']):
+                priority_repos.append("Comfy-Org/Wan_2.1_ComfyUI_repackaged")
+            if any(kw in base_lower for kw in ['wan2.2', 'wan22', 'wan_2.2', 'wan_2_2']):
+                priority_repos.append("Comfy-Org/Wan_2.2_ComfyUI_Repackaged")
+            if any(kw in base_lower for kw in ['hunyuan', 'hunyuanvideo']):
+                priority_repos.append("Comfy-Org/HunyuanVideo_repackaged")
+                priority_repos.append("Comfy-Org/HunyuanVideo_1.5_repackaged")
+            if any(kw in base_lower for kw in ['qwen-image', 'qwenimage', 'qwen_image']):
+                priority_repos.append("Comfy-Org/Qwen-Image_ComfyUI")
+                priority_repos.append("Comfy-Org/Qwen-Image-Edit_ComfyUI")
+                priority_repos.append("Comfy-Org/Qwen-Image-Layered_ComfyUI")
+            if any(kw in base_lower for kw in ['mochi']):
+                priority_repos.append("Comfy-Org/mochi_preview_repackaged")
+            if any(kw in base_lower for kw in ['hidream', 'hi-dream']):
+                priority_repos.append("Comfy-Org/HiDream-I1_ComfyUI")
+            if any(kw in base_lower for kw in ['lumina']):
+                priority_repos.append("Comfy-Org/Lumina_Image_2.0_Repackaged")
+            if any(kw in base_lower for kw in ['ace-step', 'acestep']):
+                priority_repos.append("Comfy-Org/ACE-Step_ComfyUI_repackaged")
+            if any(kw in base_lower for kw in ['sigclip']):
+                priority_repos.append("Comfy-Org/sigclip_vision_384")
+            if any(kw in base_lower for kw in ['real-esrgan', 'realesrgan']):
+                priority_repos.append("Comfy-Org/Real-ESRGAN_repackaged")
+            if any(kw in base_lower for kw in ['omnigen']):
+                priority_repos.append("Comfy-Org/Omnigen2_ComfyUI_repackaged")
                 
             # === ByteDance 加速 ===
             if any(kw in base_lower for kw in ['hyper', 'lightning']):
@@ -482,12 +508,14 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                     dir_lower = item_path.lower()
                     should_scan = any(kw in dir_lower for kw in keywords)
                     
-                    # [v3.3.2] 扩充常见目录名 (基于 Kijai/WanVideo_comfy 结构)
-                    # 28 个子目录: InfiniteTalk, Lightx2v, Qwen, SCAIL, Wan22-Turbo 等
+                    # [v3.3.2] 扩充常见目录名 (基于 Kijai/WanVideo_comfy + Comfy-Org 结构)
                     common_dirs = {
                         # 通用模型目录
                         'lora', 'loras', 'models', 'checkpoints', 'weights', 'unet',
                         'vae', 'clip', 'controlnet', 'embeddings',
+                        # Comfy-Org 三级目录结构
+                        'split_files', 'diffusion_models', 'text_encoders', 
+                        'clip_vision', 'model_patches',
                         # Kijai/WanVideo_comfy 子目录
                         'infinitetalk', 'lightx2v', 'qwen', 'scail', 'wan22-turbo',
                         'fun', 'fastwanm', 'pusa', 'lynx', 'skyreels', 'humo',
@@ -522,10 +550,10 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             return None
     
     async def _get_dir_files(self, session, model_id, dir_path, depth=0):
-        """递归获取目录文件 (最多2层)"""
+        """[v3.3.2] 递归获取目录文件 (最多3层，支持 Comfy-Org 三级目录)"""
         result = {dir_path: {"files": [], "dirs": {}}}
         
-        if depth >= 2:  # 限制深度
+        if depth >= 3:  # [v3.3.2] 增加到3层以支持 Comfy-Org
             return result
         
         try:
@@ -543,7 +571,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                 
                 if item_type == "file":
                     result[dir_path]["files"].append(item_path)
-                elif item_type == "directory" and depth < 1:  # 只递归1层
+                elif item_type == "directory" and depth < 2:  # [v3.3.2] 递归2层
                     sub_dir_tasks.append(self._get_dir_files(session, model_id, item_path, depth + 1))
             
             if sub_dir_tasks:
