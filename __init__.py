@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.1.3" # RapidFuzz, Legacy Guard, Anti-Bot Upgrade
+__version__ = "3.1.4" # Concurrent Search, Usage Reminder, Missing List
 __author__ = "LK"
 
 # 初始化核心组件

@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const VERSION = "v3.1.3";
+const VERSION = "v3.1.4";
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
@@ -499,6 +499,15 @@ async function runAutoMatch(btn, ignoreCache = false) {
         return;
     }
 
+    // [v3.1.4] Friendly Reminder
+    const lastRun = localStorage.getItem("lk-automatch-last-run");
+    const now = Date.now();
+    // Remind every 24 hours or if never run
+    if (!lastRun || (now - parseInt(lastRun)) > 86400000) {
+        app.ui.dialog.show("💡 提示：为获得最佳匹配速度和精度，建议定期点击 🔄 更新本地索引。\nTip: Regularly verify your local index for best results.");
+        localStorage.setItem("lk-automatch-last-run", now.toString());
+    }
+
     // Debug log for user transparency - MOVED inside try
 
     // UI Reset
@@ -859,6 +868,26 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
         h3.style.paddingBottom = "6px";
         h3.style.marginTop = "25px";
         h3.style.fontSize = "15px";
+        h3.style.display = "flex";
+        h3.style.alignItems = "center";
+        h3.style.justifyContent = "space-between";
+
+        const copyBtn = document.createElement("button");
+        copyBtn.innerText = "📋 复制列表";
+        copyBtn.style.fontSize = "12px";
+        copyBtn.style.background = "rgba(239, 83, 80, 0.2)";
+        copyBtn.style.border = "1px solid rgba(239, 83, 80, 0.3)";
+        copyBtn.style.color = "#ffcdd2";
+        copyBtn.style.borderRadius = "4px";
+        copyBtn.style.cursor = "pointer";
+        copyBtn.onclick = () => {
+            const text = unmatched.map(u => `${u.widget_name}: ${u.current}`).join("\n");
+            navigator.clipboard.writeText(text);
+            copyBtn.innerText = "✅ 已复制";
+            setTimeout(() => copyBtn.innerText = "📋 复制列表", 2000);
+        };
+        h3.appendChild(copyBtn);
+
         content.appendChild(h3);
 
         const groups = groupByType(unmatched);

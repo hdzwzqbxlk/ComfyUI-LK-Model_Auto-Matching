@@ -8,9 +8,16 @@ except ImportError:
 class ModelMatcher:
     def __init__(self, scanner):
         self.scanner = scanner
+        self.scanner = scanner
         # 倒排索引: {token: set(model_indices)}
         self.inverted_index = {}
         self.model_list = [] # List storing actual model info, referenced by index
+        
+        # Pre-compile regex for performance
+        import re
+        self.rank_pat = re.compile(r'(?:rank|step|epoch)[-_]?(\d+)')
+        self.anchor_pat = re.compile(r"(?i)^(wan\d|sdxl|pony|flux)")
+        self.ver_pat = re.compile(r"(?i)^(v\d|\d+\.\d+)")
 
     def _normalize_name(self, name):
         """标准化模型名称，移除扩展名并转小写"""
@@ -157,51 +164,71 @@ class ModelMatcher:
 
     def _check_conflicts(self, target_name, candidate_name):
         """
-        Check for hard conflicts that should disqualify a match.
-        Returns True if conflict exists (should disqualify), False otherwise.
+        Check for hard conflicts. Returns True if conflict exists.
+        Logic: Mutual Inclusion for Critical Tokens.
+        If Token A is in Target, it MUST be in Candidate (and vice versa) for the match to be valid.
         """
         t_lower = target_name.lower()
         c_lower = candidate_name.lower()
         
-        # 1. Critical Token Conflicts (Mutually Exclusive)
+        # 1. Critical Token Mutual Exclusion
+        # If one has it, the other MUST have it.
+        # Format: (TokenString, IsStrictWordBoundary)
+        # For now, simple substring is effective for these specific keys
+        critical_tokens = [
+            "i2v", "t2v",
+            "inpainting",
+            "vae", # Critical: VAE vs Checkpoint
+            "upscaler",
+            "refiner",
+            "img2vid", "txt2vid"
+        ]
+        
+        # Helper to check presence (could be regex for boundary if needed, but filenames vary)
+        # Using simple 'in' is safer for "Wan2.1_I2V" (no spaces)
+        
+        for token in critical_tokens:
+            in_target = token in t_lower
+            in_cand = token in c_lower
+            
+            # XOR: One has it, the other doesn't -> Conflict
+            if in_target != in_cand:
+                return True
+                
+        # 2. Mutually Exclusive Pairs (One is A, One is B -> Conflict)
+        # Useful for things that aren't binary "presence" but specific alternatives
         conflict_pairs = [
-            ("t2v", "i2v"),        # Text-to-Video vs Image-to-Video
-            ("mp4", "gif"),
             ("sdxl", "sd1.5"),
-            ("inpainting", "base"), # Inpainting vs Base models
-            ("refiner", "base"),
+            ("mp4", "gif"),
+            ("fp16", "fp8"), # User might care, but maybe fuzzy match handles score?
+                             # Let's be strict for accuracy request.
+            ("rank128", "rank64"), # Explicit Ranks
+            ("rank128", "rank32"),
+            ("rank64", "rank32"),
+            ("rank83", "rank128"), # Specific user case
         ]
         
         for a, b in conflict_pairs:
-            # Check for conflicting tokens
             has_a_t = a in t_lower
             has_b_t = b in t_lower
-            
             has_a_c = a in c_lower
             has_b_c = b in c_lower
             
-            # Case: Target is T2V, Candidate is I2V (and not T2V) -> Conflict
-            if has_a_t and not has_b_t and has_b_c and not has_a_c:
-                return True
-            if has_b_t and not has_a_t and has_a_c and not has_b_c:
-                return True
-                
-        # 2. Rank/Version/Step Numeric Conflict
-        # Extract "rankXXX" or "stepXXX"
-        import re
-        patterns = [
-            r'rank[-_]?(\d+)',
-            r'step[-_]?(\d+)',
-            r'epoch[-_]?(\d+)'
-        ]
+            # If Target is A and Candidate is B -> Conflict
+            if has_a_t and has_b_c: return True
+            # If Target is B and Candidate is A -> Conflict
+            if has_b_t and has_a_c: return True
+            
+        # 3. Numeric Rank/Step Extraction (General Case)
+        # Extract all numbers preceded by 'rank' or 'step'
+        t_nums = set(self.rank_pat.findall(t_lower))
+        c_nums = set(self.rank_pat.findall(c_lower))
         
-        for pat in patterns:
-            t_vals = re.findall(pat, t_lower)
-            c_vals = re.findall(pat, c_lower)
-            if t_vals and c_vals:
-                # If both define a rank/step, and they differ, it's a mismatch
-                if set(t_vals) != set(c_vals):
-                    return True
+        # If both have extracted numbers, and they are disjoint -> Conflict
+        if t_nums and c_nums and t_nums.isdisjoint(c_nums):
+            # e.g. Target={128}, Cand={64} -> Conflict
+            # e.g. Target={128}, Cand={128} -> OK
+            return True
 
         return False
 
@@ -228,8 +255,8 @@ class ModelMatcher:
         W_NOISE = 0.1
         from .utils import NOISE_SUFFIXES
         
-        target_anchors = {t for t in target_tokens if re.match(r"(?i)^(wan\d|sdxl|pony|flux)", t)}
-        target_versions = {t for t in target_tokens if re.match(r"(?i)^(v\d|\d+\.\d+)", t)}
+        target_anchors = {t for t in target_tokens if self.anchor_pat.match(t)}
+        target_versions = {t for t in target_tokens if self.ver_pat.match(t)}
         
         target_fmt = AdvancedTokenizer.get_model_format(current_val)
         if target_fmt == "other":

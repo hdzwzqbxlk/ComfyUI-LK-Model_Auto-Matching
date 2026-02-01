@@ -1,6 +1,13 @@
 # Changelog
 
-## [3.1.3] - 2026-02-02
+## [v3.1.4] - 2026-02-02
+### Changed
+- **UX**: Added a friendly reminder to update local index for best performance (once every 24h).
+- **UX**: Added "Copy Missing List" button to the results dialog for easy sharing.
+- **Perf**: Optimized internal regex compilation for faster matching loops.
+- **Core**: Verified and optimized concurrent/multi-threaded execution for external search providers.
+
+## [v3.1.3] - 2026-02-012
 
 ### ⚡ Performance & Accuracy
 *   **RapidFuzz Integration**: Replaced standard `difflib` with SIMD-accelerated `rapidfuzz`. Matching performance improved by **50-100x**.
