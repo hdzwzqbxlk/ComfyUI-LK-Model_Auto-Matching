@@ -12,3 +12,5 @@ debug_*.py
 test_*.py
 tests/validate_user_index.py
 core/data/models.db
+scripts/verify_*.py
+**/__pycache__/
