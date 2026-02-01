@@ -136,6 +136,22 @@ class ModelMatcher:
                 
                 widget_name = item.get("widget_name", "")
                 expected_types = WIDGET_TO_TYPE.get(widget_name, [])
+                
+                # [Fix] Restore missing Weight Definitions & Anchor Logic
+                import re
+                
+                # 定义权重
+                W_ANCHOR = 10.0   # 强语义锚点 (Wan2.1, Pony, SDXL)
+                W_VERSION = 5.0   # 版本号 (v1.5, 2.1)
+                W_NORMAL = 1.0    # 普通词
+                W_NOISE = 0.1     # 噪音 (fp16, pruned)
+
+                # 识别 Target 中的关键 Token
+                target_anchors = {t for t in target_tokens if re.match(r"(?i)^(wan\d|sdxl|pony|flux)", t)}
+                target_versions = {t for t in target_tokens if re.match(r"(?i)^(v\d|\d+\.\d+)", t)}
+                
+                # 获取噪音集合 (引用 utils 中的常量)
+                from .utils import NOISE_SUFFIXES
 
                 if candidate_indices:
                     for idx in candidate_indices:
@@ -272,11 +288,18 @@ class ModelMatcher:
                 available_names = list(basename_map.keys())
                 similars = difflib.get_close_matches(target_base, available_names, n=1, cutoff=0.85)
                 if similars:
-                    best_match = basename_map[similars[0]]
+                    potential_match = basename_map[similars[0]]
+                    # [Category Check] Apply to Legacy Match too
+                    cand_type = potential_match.get("type", "unknown")
+                    if expected_types and cand_type not in expected_types:
+                        best_match = None # Reject
+                    else:
+                        best_match = potential_match
 
             if best_match:
-                if best_match["filename"] != current_val:
-                    matches.append({
+                # [Fix] Always return match if found, even if name is identical
+                # (Because input items are 'missing', so finding identical name means path mismatch)
+                matches.append({
                         "id": item["id"],
                         "node_type": item["node_type"],
                         "widget_name": item["widget_name"],
