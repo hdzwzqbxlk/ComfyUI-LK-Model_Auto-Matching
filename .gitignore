@@ -16,3 +16,4 @@ scripts/verify_fixes.py
 **/__pycache__/
 tests/
 .agent/
+SKILL_RULES.md
