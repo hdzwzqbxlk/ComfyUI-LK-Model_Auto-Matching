@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "1.4.1" # Fix: Non-model matching & Index update issues
+__version__ = "1.4.2" # Fix: Matching Precision & Duplicate Logic
 __author__ = "LK"
 
 # 初始化核心组件

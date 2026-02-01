@@ -1,6 +1,15 @@
 {
     "versions": [
         {
+            "version": "1.4.2",
+            "date": "2026-02-01",
+            "changes": [
+                "Fix: Critical bug where official model map was ignored (Duplicate method)",
+                "Improvement: Increased fuzzy matching threshold to 0.75 to avoid false positives (e.g. Art vs Non-Art)",
+                "Feature: Added support for Wan 2.1 and Z-Image-Turbo official mapping"
+            ]
+        },
+        {
             "version": "1.4.1",
             "date": "2026-01-31",
             "changes": [

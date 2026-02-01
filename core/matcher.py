@@ -131,7 +131,7 @@ class ModelMatcher:
                             token_candidate_info = candidate_info
                     
                     # Strict threshold for fuzzy
-                    if best_token_score >= 0.6:
+                    if best_token_score >= 0.75:
                         best_match = token_candidate_info
 
             # Priority 4: Variant Match (Cross-Quantization)

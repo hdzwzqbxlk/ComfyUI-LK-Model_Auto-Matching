@@ -160,6 +160,19 @@ COMFYUI_POPULAR_MODELS = {
     'dreamshaper_8': 'Lykon/DreamShaper',
     'realvisxl_v5.0': 'SG161222/RealVisXL_V5.0',
     'juggernaut_xl': 'RunDiffusion/Juggernaut-XL-v9',
+
+    # === Wan 2.1 (Comfy-Org) ===
+    'wan2.1_t2v_1.3b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+    'wan2.1_t2v_1.3b_fp16': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+    'wan2.1_i2v_480p_14b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+    'wan2.1_i2v_720p_14b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+    'wan_2.1_vae': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+    'umt5_xxl_fp8_e4m3fn_scaled': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+
+    # === Z-Image (Turbo Art) ===
+    'z_image_turbo_art': 'wikeeyang/Z-Image-Turbo-Art',
+    'z_image_turbo_art_bf16': 'wikeeyang/Z-Image-Turbo-Art',
+    'z_image_turbo_bf16': 'wikeeyang/Z-Image-Turbo', # Distinguish from Art
 }
 
 # 变体后缀：需要被“剥离”以提取核心模型名的术语
@@ -676,59 +689,33 @@ class AdvancedTokenizer:
     @staticmethod
     def lookup_popular_model(filename):
         """
-        [New Feature] 查询 ComfyUI 常用/官方模型映射表
-        直接返回 HuggingFace 仓库 ID，跳过搜索
+        查找 ComfyUI 主流模型/官方模型映射
         """
-        lower = filename.lower()
-        base = os.path.basename(lower)
+        base_name = os.path.basename(filename)
+        # 移除扩展名
+        for ext in ['.safetensors', '.gguf', '.ckpt', '.pt', '.bin', '.pth']:
+            if base_name.lower().endswith(ext):
+                base_name = base_name[:-len(ext)]
+                break
         
-        # 常见模型映射表 (文件名 -> HF Repo ID)
-        POPULAR_MAP = {
-            # Flux
-            "flux1-dev.safetensors": "black-forest-labs/FLUX.1-dev",
-            "flux1-schnell.safetensors": "black-forest-labs/FLUX.1-schnell",
-            "flux1-dev-fp8.safetensors": "Comfy-Org/flux1-dev", # ComfyOrg hosting
-            "flux1-schnell-fp8.safetensors": "Comfy-Org/flux1-schnell",
-            "ae.safetensors": "black-forest-labs/FLUX.1-dev", # Flux VAE
-            "t5xxl_fp16.safetensors": "comfyanonymous/flux_text_encoders",
-            "t5xxl_fp8_e4m3fn.safetensors": "comfyanonymous/flux_text_encoders",
-            "clip_l.safetensors": "comfyanonymous/flux_text_encoders",
-            
-            # SDXL
-            "sd_xl_base_1.0.safetensors": "stabilityai/stable-diffusion-xl-base-1.0",
-            "sd_xl_refiner_1.0.safetensors": "stabilityai/stable-diffusion-xl-refiner-1.0",
-            "sdxl_vae.safetensors": "stabilityai/sdxl-vae",
-            
-            # SD1.5
-            "v1-5-pruned-emaonly.ckpt": "runwayml/stable-diffusion-v1-5",
-            "v1-5-pruned.ckpt": "runwayml/stable-diffusion-v1-5",
-            "vae-ft-mse-840000-ema-pruned.safetensors": "stabilityai/sd-vae-ft-mse",
-            
-            # ControlNet (Common)
-            "control_v11p_sd15_canny.pth": "lllyasviel/ControlNet-v1-1",
-            "control_v11p_sd15_openpose.pth": "lllyasviel/ControlNet-v1-1",
-            "control_v11p_sd15_lineart.pth": "lllyasviel/ControlNet-v1-1",
-            "control_v11p_sd15_softedge.pth": "lllyasviel/ControlNet-v1-1",
-            
-            # Upscalers
-            "4x-ultrasharp.pth": "Kim2091/UltraSharp",
-            "4x_nmkd-siax_200k.pth": "gemasai/4x_NMKD-Siax_200k",
-            
-            # AnimateDiff
-            "mm_sd_v15_v2.ckpt": "guoyww/animatediff",
-            "mm_sd_v15_v3.safetensors": "guoyww/animatediff",
-        }
-        
-        # 1. 精确全名匹配
-        if base in POPULAR_MAP:
-            return POPULAR_MAP[base], base
-            
-        # 2. 模糊包含匹配 (保守策略)
-        # 仅针对非常独特的名称，防止误判
-        if "flux1-dev" in base and "fp8" in base:
-            return "Comfy-Org/flux1-dev", "flux1-dev-fp8"
-            
-        return None, None
+        base_lower = base_name.lower()
+
+        # 1. 查表 (精确匹配)
+        for key, repo_id in COMFYUI_POPULAR_MODELS.items():
+            if base_lower == key.lower():
+                return (repo_id, key)
+
+        # 2. 查表 (模糊变体匹配)
+        # 尝试移除精度后缀再匹配
+        precision_suffixes = ['-fp8', '-fp16', '-bf16', '_fp8', '_fp16', '_bf16', '.fp8', '.fp16', '.bf16']
+        for suffix in precision_suffixes:
+            if base_lower.endswith(suffix):
+                stripped = base_lower[:-len(suffix)]
+                for key, repo_id in COMFYUI_POPULAR_MODELS.items():
+                    if stripped == key.lower():
+                        return (repo_id, key)
+
+        return (None, None)
 
 
     @staticmethod
