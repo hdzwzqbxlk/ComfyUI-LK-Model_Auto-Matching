@@ -85,12 +85,18 @@ class ModelMatcher:
             # Priority 1: Exact Full Path Match
             if target_norm in full_name_map:
                 best_match = full_name_map[target_norm]
+                match_type = "Exact"
             elif current_val.lower() in full_name_map:
                 best_match = full_name_map[current_val.lower()]
+                match_type = "Exact"
             
             # Priority 2: Exact Basename Match
             elif target_base in basename_map:
                 best_match = basename_map[target_base]
+                match_type = "Exact"
+            
+            else:
+                match_type = "Fuzzy"
             
             # Priority 3: Inverted Index Fuzzy Match (Optimization)
             # This handles small typos or differences
@@ -245,7 +251,8 @@ class ModelMatcher:
                         "widget_name": item["widget_name"],
                         "original_value": current_val,
                         "matched_value": best_match["filename"],
-                        "path": best_match["path"] 
+                        "path": best_match["path"],
+                        "match_type": match_type
                     })
 
         return matches
