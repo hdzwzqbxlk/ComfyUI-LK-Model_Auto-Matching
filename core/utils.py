@@ -71,10 +71,33 @@ MODEL_ALIASES = _DATA.get('model_aliases', {
 })
 
 # 5. ComfyUI 官方主流模型精确映射表
+# [v3.3.1] 基于用户模型库样本扩充
 COMFYUI_POPULAR_MODELS = _DATA.get('popular_models', {
+    # 基础模型
     'v1-5-pruned-emaonly': 'Comfy-Org/stable-diffusion-v1-5-archive',
     'sd_xl_base_1.0': 'stabilityai/stable-diffusion-xl-base-1.0',
     'flux1-dev': 'black-forest-labs/FLUX.1-dev',
+    'flux1-dev-fp8': 'black-forest-labs/FLUX.1-dev',
+    'flux1-schnell': 'black-forest-labs/FLUX.1-schnell',
+    
+    # Wan 系列
+    'infinitetalk': 'InfiniteTalk/Wan2_1-InfiniTetalk-Single',
+    'wan2_1-infinitetalk': 'InfiniteTalk/Wan2_1-InfiniTetalk-Single',
+    'wan2.1-i2v-14b': 'Wan-AI/Wan2.1-I2V-14B-480P',
+    'wan2.1-t2v-14b': 'Wan-AI/Wan2.1-T2V-14B',
+    'wan2.2-remix': 'FX-FeiHou/Wan2.2-Remix',
+    
+    # Qwen 系列
+    'qwen_image': 'Qwen/Qwen2.5-Coder-32B-Instruct',
+    'qwen_image_edit_2509': 'Kijai/Qwen-Image-Edit-2509',
+    'qwen_image_edit_2511': 'Kijai/Qwen-Image-Edit-2511',
+    
+    # Z-Image 系列
+    'z_image': 'Zongjian/Z-Image',
+    'z_image_turbo': 'Zongjian/Z-Image-Turbo',
+    
+    # LTX 系列
+    'ltx-2-19b': 'Lightricks/LTX-Video-2-19B',
 })
 
 # 6. 变体后缀
