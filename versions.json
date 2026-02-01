@@ -1,22 +1,23 @@
 {
     "versions": [
         {
+            "version": "3.0.0",
+            "date": "2026-02-01",
+            "changes": [
+                "Major: HuggingFace Hub API File Search (精确文件名匹配)",
+                "Major: Removed Google site: syntax (避免IP封禁)",
+                "Perf: Added rate limiting delays (0.2-1.5s) to all providers",
+                "Fix: Civitai/Google IP blocking issues resolved",
+                "Feat: Keyword-based repo + file tree traversal for HF"
+            ]
+        },
+        {
             "version": "2.0.2",
             "date": "2026-02-01",
             "changes": [
                 "Critical Fix: Infinite Loop in Tokenizer (Scanning Hang)",
                 "Fix: Improved 'Wan2.1' logic to prevent splitting (wan2 + 1)",
                 "Perf: Optimized Tokenizer Speed (~20ms/10k calls)"
-            ]
-        },
-        {
-            "version": "2.0.1",
-            "date": "2026-02-01",
-            "changes": [
-                "Major: New 'Semantic Anchor' Matching Algorithm (v2.0)",
-                "Fix: Solved 'Wan2.1', 'SDXL', 'Pony' token fragmentation issues",
-                "Feat: Weighted Scoring System (Anchors +10, Noise +0.1)",
-                "Refactor: Robust Regex-based Tokenizer"
             ]
         },
         {

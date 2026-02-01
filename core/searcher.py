@@ -147,6 +147,125 @@ class HuggingFaceProvider(BaseProvider):
             print(f"[HFProvider] Error: {e}")
         return results
 
+class HuggingFaceFileSearchProvider(BaseProvider):
+    """
+    [v3.0] Search HuggingFace for EXACT FILENAMES via HuggingFace Hub API.
+    
+    策略：
+    1. 从文件名提取关键词 (如 Wan, T2V, lora)
+    2. 用 HF API 搜索匹配的仓库
+    3. 检查每个仓库的文件列表，寻找精确匹配
+    
+    不使用 Google/搜索引擎，直接调用 HF API，避免被封禁。
+    """
+    def __init__(self, config):
+        super().__init__(config)
+        self.api_url = "https://huggingface.co/api/models"
+        
+    async def search(self, query, original_filename):
+        results = []
+        try:
+            # 从文件名提取核心搜索词
+            base_name = os.path.splitext(original_filename)[0]
+            
+            # 提取关键词：Wan, 2.1, T2V, 14B, rCM, lora 等
+            core_parts = base_name.replace("_", " ").replace("-", " ").split()
+            
+            # 优先匹配有意义的关键词
+            keywords = []
+            for part in core_parts:
+                # 跳过纯数字和太短的词
+                if part.isdigit() or len(part) < 2:
+                    continue
+                # 跳过噪声词
+                if part.lower() in {'average', 'rank', 'bf16', 'fp16', 'safetensors'}:
+                    continue
+                keywords.append(part)
+                if len(keywords) >= 4:
+                    break
+            
+            if not keywords:
+                return []
+                
+            search_query = " ".join(keywords[:3])
+            
+            print(f"[HFFileSearch] API Search: {search_query}")
+            
+            headers = self._get_headers("https://huggingface.co")
+            
+            # 搜索仓库
+            encoded_query = urllib.parse.quote(search_query)
+            url = f"{self.api_url}?search={encoded_query}&limit=15"
+            
+            async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
+                response = await session.get(url)
+                if response.status_code != 200:
+                    print(f"[HFFileSearch] API Status {response.status_code}")
+                    return []
+                
+                try:
+                    repos = response.json()
+                except:
+                    return []
+                
+                original_lower = original_filename.lower()
+                
+                # 检查每个仓库
+                for repo in repos[:10]:
+                    model_id = repo.get("modelId", "")
+                    if not model_id:
+                        continue
+                    
+                    # 计算仓库名与文件名的相似度
+                    repo_name = model_id.split("/")[-1].lower()
+                    
+                    # 检查关键词匹配
+                    match_count = sum(1 for k in keywords[:3] if k.lower() in repo_name or k.lower() in model_id.lower())
+                    
+                    if match_count >= 2:
+                        # 高匹配度 - 尝试获取文件列表
+                        try:
+                            files_url = f"https://huggingface.co/api/models/{model_id}/tree/main"
+                            await asyncio.sleep(0.2)  # 小延迟避免触发限制
+                            
+                            files_resp = await session.get(files_url)
+                            if files_resp.status_code == 200:
+                                files_data = files_resp.json()
+                                
+                                # 检查是否有匹配的文件
+                                for item in files_data:
+                                    if item.get("type") == "file":
+                                        file_path = item.get("path", "")
+                                        if original_lower in file_path.lower():
+                                            # 精确匹配！
+                                            results.append({
+                                                "source": "HuggingFace (Exact File)",
+                                                "name": model_id,
+                                                "filename": file_path,
+                                                "url": f"https://huggingface.co/{model_id}/blob/main/{file_path}",
+                                                "pageUrl": f"https://huggingface.co/{model_id}/tree/main",
+                                                "score": 0.98
+                                            })
+                                            return results  # 找到精确匹配，立即返回
+                        except:
+                            pass
+                        
+                        # 即使没找到精确文件，仓库本身也是好候选
+                        score = 0.5 + (match_count * 0.15)
+                        results.append({
+                            "source": "HuggingFace (Repo Match)",
+                            "name": model_id,
+                            "filename": "Check Files Tab",
+                            "url": f"https://huggingface.co/{model_id}/tree/main",
+                            "pageUrl": f"https://huggingface.co/{model_id}",
+                            "score": score
+                        })
+                    
+        except Exception as e:
+            print(f"[HFFileSearch] Error: {e}")
+        return results
+
+
 class ModelScopeProvider(BaseProvider):
     def __init__(self, config):
         super().__init__(config)
@@ -219,8 +338,8 @@ class GoogleOmniProvider(BaseProvider):
     async def search(self, query, original_filename):
         results = []
         try:
-            # Combined query
-            sites_or_keywords = "liblib.art OR shakker.ai OR civitai.com OR huggingface.co OR modelscope.cn"
+            # 使用域名作为关键词，不使用 site: 语法 (容易触发率限制)
+            sites_or_keywords = "liblib OR shakker OR civitai OR huggingface OR modelscope"
             full_query = f"{query} ({sites_or_keywords})"
             
             print(f"[GoogleOmni] Searching: {full_query}")
@@ -229,6 +348,9 @@ class GoogleOmniProvider(BaseProvider):
             url = f"https://www.google.com/search?q={encoded_query}&num=20&hl=en"
             
             headers = self._get_headers("https://www.google.com/")
+            
+            # 添加随机延迟避免触发率限制
+            await asyncio.sleep(random.uniform(0.5, 1.5))
             
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.get(url)
@@ -396,8 +518,8 @@ class DuckDuckGoProvider(BaseProvider):
     async def search(self, query, original_filename):
         results = []
         try:
-            # Combined query targeting known sites
-            sites = "site:liblib.art OR site:shakker.ai OR site:civitai.com OR site:huggingface.co OR site:modelscope.cn"
+            # 使用域名作为关键词，不使用 site: 语法 (DDG 对 site: 支持不稳定)
+            sites = "liblib OR shakker OR civitai OR huggingface OR modelscope"
             full_query = f"{query} ({sites})"
             
             print(f"[DuckDuckGo] Searching: {full_query}")
@@ -406,9 +528,12 @@ class DuckDuckGoProvider(BaseProvider):
             data = {"q": full_query}
             
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Referer": "https://html.duckduckgo.com/"
             }
+            
+            # 添加随机延迟避免触发率限制
+            await asyncio.sleep(random.uniform(0.3, 1.0))
             
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.post(url, data=data)
@@ -484,9 +609,10 @@ class ModelSearcher:
         self.config = self.load_config()
         self.search_cache = {}
         
-        # Provider 优先级：Civitai > HuggingFace > Liblib > ModelScope > Google (兜底)
-        # DuckDuckGo 作为 Google 的备选兜底
+        # Provider 优先级 [v3.0]:
+        # HuggingFace File Search (精确文件名匹配) > Civitai > HuggingFace API > Liblib > ModelScope > Google (兜底)
         self.providers = [
+            HuggingFaceFileSearchProvider(self.config),  # [v3.0] 新增: 精确文件名搜索 (最高优先级)
             CivitaiProvider(self.config),
             HuggingFaceProvider(self.config),
             LiblibProvider(self.config),
@@ -494,6 +620,7 @@ class ModelSearcher:
             GoogleOmniProvider(self.config),
             DuckDuckGoProvider(self.config)
         ]
+
 
     def load_config(self):
         if os.path.exists(self.config_path):
