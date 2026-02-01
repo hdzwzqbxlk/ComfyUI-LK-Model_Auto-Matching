@@ -10,8 +10,10 @@ from parsel import Selector
 
 try:
     from .utils import AdvancedTokenizer
+    from .kijai_models_db import find_best_match_in_kijai
 except ImportError:
     from utils import AdvancedTokenizer
+    from kijai_models_db import find_best_match_in_kijai
 
 class BaseProvider:
     def __init__(self, config=None):
@@ -339,6 +341,19 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             if not keywords:
                 return []
             
+            # [v3.3.2] 优先使用 Kijai 精确数据库匹配
+            kijai_match, kijai_score = find_best_match_in_kijai(original_filename)
+            if kijai_match and kijai_score >= 0.85:
+                print(f"[HFOptimized] Kijai DB match: {kijai_match} (score: {kijai_score:.2f})")
+                return [{
+                    "source": "HuggingFace (Kijai DB Match)",
+                    "name": "Kijai/WanVideo_comfy",
+                    "filename": kijai_match,
+                    "url": f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{kijai_match}",
+                    "pageUrl": "https://huggingface.co/Kijai/WanVideo_comfy",
+                    "score": kijai_score
+                }]
+            
             # [v3.3.2] 智能仓库检测 (基于 Kijai/WanVideo_comfy 结构分析)
             base_lower = original_filename.lower()
             priority_repos = []
@@ -623,7 +638,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         return None
     
     def _is_match(self, file_path, original_lower, original_base):
-        """检查文件是否匹配"""
+        """[v3.3.2] 检查文件是否匹配 - 增强 RapidFuzz 模糊匹配"""
         file_lower = file_path.lower()
         file_base = os.path.splitext(os.path.basename(file_path))[0].lower()
         
@@ -634,6 +649,20 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         # 包含原始文件名
         if original_lower in file_lower:
             return True
+        
+        # [v3.3.2] RapidFuzz 模糊匹配 (处理 Wan_2_1_T2V_14B_rCM 缺少 480p 的情况)
+        try:
+            from rapidfuzz import fuzz
+            # partial_ratio: 处理缺少部分的情况
+            score = fuzz.partial_ratio(original_base, file_base)
+            if score >= 85:
+                return True
+            # token_set_ratio: 处理词序不同的情况
+            token_score = fuzz.token_set_ratio(original_base, file_base)
+            if token_score >= 90:
+                return True
+        except ImportError:
+            pass
         
         return False
     
