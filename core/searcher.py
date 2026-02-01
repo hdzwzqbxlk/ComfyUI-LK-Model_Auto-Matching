@@ -640,6 +640,20 @@ class HuggingFaceFileSearchProvider(BaseProvider):
 
 
 class ModelScopeProvider(BaseProvider):
+    """
+    [v3.3.2] 增强版 ModelScope 搜索
+    支持中文模型名优化和多仓库检索
+    """
+    
+    # ModelScope 常见仓库映射
+    PRIORITY_REPOS = {
+        'wan': ['Wuli001/WAN-MoE', 'AI-ModelScope/Wan-Video'],
+        'qwen': ['Qwen/Qwen2.5-VL-7B-Instruct', 'Qwen/Qwen-VL'],
+        'flux': ['AI-ModelScope/FLUX.1-dev', 'AI-ModelScope/FLUX.1-schnell'],
+        'sd': ['AI-ModelScope/stable-diffusion-v1-5', 'AI-ModelScope/stable-diffusion-xl-base-1.0'],
+        'hunyuan': ['Tencent-Hunyuan/HunyuanVideo'],
+    }
+    
     def __init__(self, config):
         super().__init__(config)
         self.api_url = "https://modelscope.cn/api/v1/dolphin/models"
@@ -647,55 +661,72 @@ class ModelScopeProvider(BaseProvider):
     async def search(self, query, original_filename):
         results = []
         try:
-            print(f"[ModelScopeProvider] Searching API for: {query}")
+            # [v3.3.2] 智能搜索词生成
+            base_lower = original_filename.lower()
+            search_terms = [query]
+            
+            # 添加中文搜索词
+            import re as re_module
+            chinese_chars = re_module.findall(r'[\u4e00-\u9fff]+', original_filename)
+            if chinese_chars:
+                search_terms.insert(0, ''.join(chinese_chars))  # 中文优先
+            
+            # 添加模型系列关键词
+            for key, repos in self.PRIORITY_REPOS.items():
+                if key in base_lower:
+                    search_terms.append(key)
+                    
+            print(f"[ModelScopeProvider] Searching API for: {search_terms[:2]}")
             headers = self._get_headers(referer="https://modelscope.cn/models")
             headers["Content-Type"] = "application/json"
             headers["Origin"] = "https://modelscope.cn"
             
-            payload = {
-                "PageSize": 20, 
-                "PageNumber": 1, 
-                "SearchText": query, 
-                "Sort": {"SortBy": "Default"}
-            }
-            
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
-                response = await session.put(self.api_url, json=payload)
-                if response.status_code != 200: return []
-                
-                try:
-                    data = response.json()
-                except: return []
-                
-                if not data.get("Success", False): return []
-                models = data.get("Data", {}).get("Model", {}).get("Models", [])
-                
-                original_lower = original_filename.lower()
-                
-                for model in models:
-                    org_name = model.get("Path", "")
-                    model_name = model.get("Name", "")
-                    chinese_name = model.get("ChineseName", "")
+                # 尝试多个搜索词
+                for search_term in search_terms[:2]:
+                    payload = {
+                        "PageSize": 20, 
+                        "PageNumber": 1, 
+                        "SearchText": search_term, 
+                        "Sort": {"SortBy": "Default"}
+                    }
                     
-                    full_path_cleansed = org_name.split("/")[-1] if "/" in org_name else org_name
+                    response = await session.put(self.api_url, json=payload)
+                    if response.status_code != 200: continue
                     
-                    scores = [
-                        AdvancedTokenizer.calculate_similarity(original_lower, model_name.lower()),
-                        AdvancedTokenizer.calculate_similarity(original_lower, full_path_cleansed.lower()),
-                    ]
-                    if chinese_name:
-                        scores.append(AdvancedTokenizer.calculate_similarity(original_lower, chinese_name.lower()))
+                    try:
+                        data = response.json()
+                    except: continue
+                    
+                    if not data.get("Success", False): continue
+                    models = data.get("Data", {}).get("Model", {}).get("Models", [])
+                    
+                    original_lower = original_filename.lower()
+                    
+                    for model in models:
+                        org_name = model.get("Path", "")
+                        model_name = model.get("Name", "")
+                        chinese_name = model.get("ChineseName", "")
                         
-                    score = max(scores)
-                    
-                    if score > 0.35:
-                        results.append({
-                            "source": "ModelScope",
-                            "name": chinese_name if chinese_name else model_name,
-                            "filename": "Unknown (Go to Files)",
-                            "url": f"https://modelscope.cn/models/{org_name}/files",
-                            "pageUrl": f"https://modelscope.cn/models/{org_name}",
-                            "score": score
+                        full_path_cleansed = org_name.split("/")[-1] if "/" in org_name else org_name
+                        
+                        scores = [
+                            AdvancedTokenizer.calculate_similarity(original_lower, model_name.lower()),
+                            AdvancedTokenizer.calculate_similarity(original_lower, full_path_cleansed.lower()),
+                        ]
+                        if chinese_name:
+                            scores.append(AdvancedTokenizer.calculate_similarity(original_lower, chinese_name.lower()))
+                            
+                        score = max(scores)
+                        
+                        if score > 0.35:
+                            results.append({
+                                "source": "ModelScope",
+                                "name": chinese_name if chinese_name else model_name,
+                                "filename": "Unknown (Go to Files)",
+                                "url": f"https://modelscope.cn/models/{org_name}/files",
+                                "pageUrl": f"https://modelscope.cn/models/{org_name}",
+                                "score": score
                         })
         except Exception as e:
             print(f"[ModelScopeProvider] Error: {e}")
