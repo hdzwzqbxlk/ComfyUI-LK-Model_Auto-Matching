@@ -308,15 +308,25 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         self.api_url = "https://huggingface.co/api/models"
         
     def _extract_keywords(self, filename):
-        """从文件名提取搜索关键词"""
-        base_name = os.path.splitext(filename)[0].lower()
+        """[v3.3.2] 从文件名提取搜索关键词 (保护 rCM/aniWan 等)"""
+        base_name = os.path.splitext(filename)[0]
+        
+        # [v3.3.2] CamelCase 分词 (处理 aniWan2114B → ani_Wan_2114_B)
+        base_name = re.sub(r'([a-z])([A-Z])', r'\1_\2', base_name)
+        base_name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', base_name)
+        base_name = base_name.lower()
+        
         # 分词
-        parts = re.split(r'[-_.\s]+', base_name)
+        parts = re.split(r'[-_.\\s]+', base_name)
+        
+        # [v3.3.2] 保护的关键词 (即使短也保留)
+        protected = {'rcm', 'ani', 'wan', 't2v', 'i2v', 's2v', 'vae', 'lora'}
+        
         # 过滤噪声
         noise = {'average', 'rank', 'bf16', 'fp16', 'fp8', 'safetensors', 'ckpt', 
-                 'q4', 'q5', 'q8', 'k', 'm', 's', 'single', 'merged'}
-        keywords = [p for p in parts if len(p) >= 2 and p not in noise and not p.isdigit()]
-        return set(keywords[:6])  # 最多 6 个关键词
+                 'q4', 'q5', 'q8', 'k', 'm', 's', 'single', 'merged', 'e4m3fn', 'e5m2', 'new'}
+        keywords = [p for p in parts if (len(p) >= 2 or p in protected) and p not in noise and not p.isdigit()]
+        return set(keywords[:8])  # [v3.3.2] 增加到 8 个关键词
         
     async def search(self, query, original_filename):
         """高性能搜索入口"""
@@ -335,8 +345,10 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             
             # === Kijai/WanVideo_comfy 子目录 ===
             # 仓库子目录: InfiniteTalk, Lightx2v, Qwen, SCAIL, Wan22-Turbo etc.
+            # [v3.3.2] 添加 rcm/aniwan/causvid/accvid 等关键词
             if any(kw in base_lower for kw in ['wan', 'infinitetalk', 'lightx2v', 'phantom', 'anisora', 
-                                                'vace', 'accvid', 'causvid', 'movii', 'flf2v', 'magref']):
+                                                'vace', 'accvid', 'causvid', 'movii', 'flf2v', 'magref',
+                                                'rcm', 'aniwan', 'dasiwa', 't2v', 'i2v', 's2v']):
                 priority_repos.append("Kijai/WanVideo_comfy")
             
             # === Qwen 系列 ===

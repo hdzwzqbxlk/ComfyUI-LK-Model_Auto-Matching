@@ -116,18 +116,38 @@ COMFYUI_POPULAR_MODELS = _DATA.get('popular_models', {
     'flux_realism_lora': 'XLabs-AI/flux-lora-collection',
     'flux_novumarte': 'Noobai/flux-NovumArte',
     
-    # ========== Wan 系列 ==========
-    'infinitetalk': 'InfiniteTalk/Wan2_1-InfiniTetalk-Single',
-    'wan2_1-infinitetalk': 'InfiniteTalk/Wan2_1-InfiniTetalk-Single',
-    'wan2.1-i2v-14b': 'Wan-AI/Wan2.1-I2V-14B-480P',
-    'wan2.1-t2v-14b': 'Wan-AI/Wan2.1-T2V-14B',
+    # ========== Wan 系列 (v3.3.2 精确修复) ==========
+    # InfiniteTalk 在 Kijai/WanVideo_comfy/InfiniteTalk/ 子目录
+    'infinitetalk': 'Kijai/WanVideo_comfy',
+    'wan2_1-infinitetalk': 'Kijai/WanVideo_comfy',
+    'wan2_1-infiniTetalk-single': 'Kijai/WanVideo_comfy',  # 精确文件名
+    'wan2_1-infinitetalk-multi': 'Kijai/WanVideo_comfy',
+    
+    # rCM LoRA 在 Kijai/WanVideo_comfy/LoRAs/ 子目录
+    'rcm': 'Kijai/WanVideo_comfy',
+    'rcm_lora': 'Kijai/WanVideo_comfy',
+    'wan_2_1_t2v_14b_rcm_lora': 'Kijai/WanVideo_comfy',
+    
+    # CausVid/AccVid/lightx2v 加速 LoRA
+    'causvid': 'Kijai/WanVideo_comfy',
+    'accvid': 'Kijai/WanVideo_comfy',
+    'lightx2v': 'Kijai/WanVideo_comfy',
+    'moviigen': 'Kijai/WanVideo_comfy',
+    
+    # aniWan 别名 (Civitai 风格命名)
+    'aniwan': 'Kijai/WanVideo_comfy',
+    'aniwan21': 'Kijai/WanVideo_comfy',
+    'aniwan2114b': 'Kijai/WanVideo_comfy',
+    
+    # 基础 Wan 模型
+    'wan2.1-i2v-14b': 'Kijai/WanVideo_comfy',
+    'wan2.1-t2v-14b': 'Kijai/WanVideo_comfy',
     'wan2.2-remix': 'FX-FeiHou/Wan2.2-Remix',
     'wan2.2-i2v-14b': 'Kijai/WanVideo_comfy',
     'wan2.2-t2v-14b': 'Kijai/WanVideo_comfy',
     'wan2.2-s2v-14b': 'Kijai/WanVideo_comfy',
     'wan21-scail': 'SCAIL/Wan21-14B-SCAIL-preview',
-    'lightx2v': 'Kijai/WanVideo_comfy',
-    'dasiwa': 'Dasiwa/WAN-2.2-I2V-14B',
+    'dasiwa': 'Kijai/WanVideo_comfy',
     
     # ========== Qwen 系列 ==========
     'qwen_image': 'Kijai/Qwen-Image',
