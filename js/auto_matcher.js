@@ -706,6 +706,7 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
                     <div style="font-size:12px; color:#aaa; text-decoration:line-through; margin-bottom:2px;">${m.original}</div>
                     <div style="color:#a5d6a7; font-weight:600; font-size:13px; display:flex; align-items:center;">
                         <span style="margin-right:6px;">↪</span> ${m.new_value}
+                        ${m.match_type === 'Exact' ? '<span style="background:rgba(76,175,80,0.2); color:#81c784; padding:1px 5px; border-radius:3px; font-size:10px; margin-left:6px; border:1px solid rgba(76,175,80,0.3);">-- 完全匹配 ! --</span>' : ''}
                     </div>
                 `;
                 ul.appendChild(li);

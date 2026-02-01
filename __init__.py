@@ -30,7 +30,8 @@ async def match_models(request):
                 "node_type": m["node_type"],
                 "widget_name": m["widget_name"], 
                 "original": m["original_value"], 
-                "new_value": m["matched_value"]
+                "new_value": m["matched_value"],
+                "match_type": m.get("match_type", "Fuzzy")
             })
         
         return web.json_response({"matches": results})
