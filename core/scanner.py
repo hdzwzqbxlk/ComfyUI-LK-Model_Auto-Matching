@@ -25,6 +25,11 @@ VALID_MODEL_EXTENSIONS = {
     '.gguf', '.onnx', '.pkl', '.sft'
 }
 
+def is_valid_model_file(filename):
+    if not filename: return False
+    _, ext = os.path.splitext(filename)
+    return ext.lower() in VALID_MODEL_EXTENSIONS
+
 HASH_VERSION = 1  # 索引结构版本，不兼容时升级
 
 class ModelIndex:

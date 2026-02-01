@@ -528,6 +528,12 @@ class ModelSearcher:
 
     async def search(self, filename, ignore_cache=False):
         if not filename: return None
+
+        # [Strict Filter] Verify extension
+        from .scanner import is_valid_model_file
+        if not is_valid_model_file(filename):
+            print(f"[AutoMatch] Skipped non-model file: {filename}")
+            return None
         
         if not ignore_cache and filename in self.search_cache:
             print(f"[AutoMatch] Cache Hit: {filename}")

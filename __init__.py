@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "1.4.2" # Fix: Matching Precision & Duplicate Logic
+__version__ = "1.4.3" # Fix: Strict Non-Model File Filtering
 __author__ = "LK"
 
 # 初始化核心组件
@@ -50,10 +50,12 @@ async def search_models(request):
         tasks = []
         original_filenames = []
         
+        from .core.scanner import is_valid_model_file
         import asyncio
         for item in items:
             filename = item.get("current")
-            if filename and "." in filename:
+            # Strict Filter at API level
+            if filename and is_valid_model_file(filename):
                 tasks.append(searcher.search(filename, ignore_cache=ignore_cache))
                 original_filenames.append(filename)
         

@@ -1,6 +1,14 @@
 {
     "versions": [
         {
+            "version": "1.4.3",
+            "date": "2026-02-01",
+            "changes": [
+                "Fix: Strict filtering of non-model files (images, audio, text) at API and Matcher level",
+                "Fix: Prevent searcher from processing invalid file extensions"
+            ]
+        },
+        {
             "version": "1.4.2",
             "date": "2026-02-01",
             "changes": [

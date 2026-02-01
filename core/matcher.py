@@ -73,10 +73,8 @@ class ModelMatcher:
                 continue
                 
             # [Filter] Skip non-model files (images, audio, etc)
-            # Use VALID_MODEL_EXTENSIONS from scanner for consistency
-            from .scanner import VALID_MODEL_EXTENSIONS
-            _, ext = os.path.splitext(current_val)
-            if ext.lower() not in VALID_MODEL_EXTENSIONS:
+            from .scanner import is_valid_model_file
+            if not is_valid_model_file(current_val):
                 continue
 
             target_norm = self._normalize_name(current_val)
