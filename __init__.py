@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "1.4.3" # Fix: Strict Non-Model File Filtering
+__version__ = "1.4.5" # Refactor: Robust Allowlist Filtering
 __author__ = "LK"
 
 # 初始化核心组件

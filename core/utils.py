@@ -166,6 +166,15 @@ COMFYUI_POPULAR_MODELS = {
     'wan2.1_t2v_1.3b_fp16': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
     'wan2.1_i2v_480p_14b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
     'wan2.1_i2v_720p_14b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+    
+    # === Wan 2.1 (Kijai/Community Variants) ===
+    'wanvideo_comfy': 'Kijai/WanVideo_comfy',
+    'wan21_i2v_14b': 'Kijai/WanVideo_comfy',
+    'wan21_t2v_14b': 'Kijai/WanVideo_comfy',
+    'wan21_i2v_14b_lightx2v': 'Kijai/WanVideo_comfy',
+    'wan21_t2v_14b_lightx2v': 'Kijai/WanVideo_comfy',
+    'wan2.1-14b': 'Kijai/WanVideo_comfy',
+    'wan2_1-infinitetalk': 'Kijai/WanVideo_comfy',
     'wan_2.1_vae': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
     'umt5_xxl_fp8_e4m3fn_scaled': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
 

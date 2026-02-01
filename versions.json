@@ -1,6 +1,23 @@
 {
     "versions": [
         {
+            "version": "1.4.5",
+            "date": "2026-02-01",
+            "changes": [
+                "Refactor: Switched frontend filtering to ALLOWLIST logic (Strictly matches model extensions)",
+                "Improvement: Logic is now consistent with backend scanner"
+            ]
+        },
+        {
+            "version": "1.4.4",
+            "date": "2026-02-01",
+            "changes": [
+                "Fix: Frontend filtering for .flac/.mp3/.wav files",
+                "Feat: Add Wan 2.1 (Kijai/Community) model mappings",
+                "Fix: Sync frontend version display"
+            ]
+        },
+        {
             "version": "1.4.3",
             "date": "2026-02-01",
             "changes": [

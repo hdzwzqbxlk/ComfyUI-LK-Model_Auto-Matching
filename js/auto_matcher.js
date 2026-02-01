@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.5";
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
@@ -900,20 +900,18 @@ function findMissingModels() {
                 // Condition: Value exists AND Options array exists AND Value is NOT in Options
                 if (value && options.length >= 0 && !options.includes(value)) {
 
-                    // FIX: Ignore Image/Video/Config Uploads (don't try to match user inputs)
-                    const strVal = String(value).toLowerCase();
-                    const ignoredExts = [
-                        // Images
-                        ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif",
-                        // Videos
-                        ".mp4", ".mov", ".avi", ".mkv", ".webm",
-                        // Config/Text
-                        ".txt", ".md", ".json", ".yaml", ".yml", ".ini",
-                        // Archives
-                        ".zip", ".rar", ".7z", ".tar", ".gz"
+                    // FIX: Use ALLOWLIST (Robust) instead of Blocklist
+                    // Only process files that are actually models.
+                    const validModelExts = [
+                        ".safetensors", ".ckpt", ".pt", ".pth", ".bin",
+                        ".gguf", ".onnx", ".pkl", ".sft"
                     ];
 
-                    if (ignoredExts.some(ext => strVal.endsWith(ext))) {
+                    // Check if current value ends with a valid extension
+                    const isValidModel = validModelExts.some(ext => strVal.endsWith(ext));
+
+                    // If it DOES NOT have a valid model extension, ignore it.
+                    if (!isValidModel) {
                         continue;
                     }
 
