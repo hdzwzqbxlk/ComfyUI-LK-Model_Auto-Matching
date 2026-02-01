@@ -556,42 +556,62 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
         return;
     }
 
-    const content = document.createElement("div");
-    content.style.position = "relative";
-    content.style.padding = "20px";
-    content.style.fontFamily = "'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-    content.style.minWidth = "450px";
-    content.style.maxHeight = "80vh";
-    content.style.overflowY = "auto";
-    content.style.background = "linear-gradient(145deg, #2a2a2a, #1e1e1e)";
-    content.style.borderRadius = "12px";
-    content.style.boxShadow = "0 10px 40px rgba(0,0,0,0.6)";
-    content.style.border = "1px solid rgba(255,255,255,0.08)";
-    content.style.color = "#eee";
+    // 创建外层容器 (不滚动)
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = `
+        position: relative;
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        min-width: 450px;
+        max-height: 80vh;
+        background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: #eee;
+        display: flex;
+        flex-direction: column;
+    `;
 
     // --- HACK: Hide Default Close Button ---
-    // Inject a style that hides the button immediately following our content's parent
     const style = document.createElement("style");
     style.innerHTML = `
         .comfy-modal-content > button { display: none !important; } 
     `;
-    content.appendChild(style);
+    wrapper.appendChild(style);
 
+    // 固定头部 (包含标题和关闭按钮)
+    const header = document.createElement("div");
+    header.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        flex-shrink: 0;
+    `;
 
-    // 添加右上角关闭按钮 X (使用 sticky 定位，滚动时保持可见)
+    // Header 标题
+    const totalCount = matches.length + downloadResults.length + unmatched.length;
+    const h2 = document.createElement("h2");
+    h2.innerText = `Auto Match Results (${totalCount})`;
+    h2.style.cssText = `
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        color: white;
+    `;
+    header.appendChild(h2);
+
+    // 关闭按钮 X (固定在头部右侧)
     const xBtn = document.createElement("button");
     xBtn.innerText = "✕";
     xBtn.title = "Close";
     xBtn.style.cssText = `
-        position: sticky;
-        top: 0;
-        float: right;
-        background: rgba(40, 40, 40, 0.95);
+        background: rgba(60, 60, 60, 0.9);
         border: 1px solid rgba(255, 255, 255, 0.15);
         color: rgba(255, 255, 255, 0.8);
         font-size: 16px;
         cursor: pointer;
-        z-index: 100;
         padding: 4px;
         border-radius: 50%;
         width: 32px;
@@ -600,8 +620,7 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
         align-items: center;
         justify-content: center;
         transition: all 0.2s ease;
-        margin-bottom: -32px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        flex-shrink: 0;
     `;
     xBtn.onmouseenter = () => {
         xBtn.style.color = "white";
@@ -610,25 +629,25 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
     };
     xBtn.onmouseleave = () => {
         xBtn.style.color = "rgba(255, 255, 255, 0.8)";
-        xBtn.style.background = "rgba(40, 40, 40, 0.95)";
+        xBtn.style.background = "rgba(60, 60, 60, 0.9)";
         xBtn.style.borderColor = "rgba(255, 255, 255, 0.15)";
     };
     xBtn.onclick = () => {
-        const modal = content.closest(".comfy-modal");
+        const modal = wrapper.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
     };
-    content.appendChild(xBtn);
+    header.appendChild(xBtn);
+    wrapper.appendChild(header);
 
+    // 可滚动内容区域
+    const content = document.createElement("div");
+    content.style.cssText = `
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+        max-height: calc(80vh - 70px);
+    `;
 
-    // Header logic
-    const totalCount = matches.length + downloadResults.length + unmatched.length;
-    const h2 = document.createElement("h2");
-    h2.innerText = `Auto Match Results (${totalCount})`;
-    h2.style.margin = "0 0 15px 0";
-    h2.style.fontSize = "20px";
-    h2.style.fontWeight = "600";
-    h2.style.color = "white";
-    content.appendChild(h2);
 
     // Helper to group items by type
     const groupByType = (items) => {
@@ -873,7 +892,7 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
     retryBtn.onmouseup = () => retryBtn.style.transform = "scale(1)";
 
     retryBtn.onclick = async () => {
-        const modal = content.closest(".comfy-modal");
+        const modal = wrapper.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
         const autoMatchBtn = document.getElementById("lk-auto-match-btn");
         if (autoMatchBtn) {
@@ -884,7 +903,10 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
 
     content.appendChild(actionsBar);
 
-    app.ui.dialog.show(content);
+    // 将 content 添加到 wrapper 中
+    wrapper.appendChild(content);
+
+    app.ui.dialog.show(wrapper);
 }
 
 function findMissingModels() {

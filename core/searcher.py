@@ -298,6 +298,23 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                 " ".join(keywords[:3]),  # 原始关键词
             ]
             
+            # [v3.0.2] 智能仓库名检测：识别常见的模型系列，直接搜索对应仓库
+            base_lower = base_name.lower()
+            
+            # WAN 视频模型系列 -> Kijai/WanVideo_comfy
+            # HF API 搜索 'Kijai' 会返回该仓库
+            if 'wan' in base_lower and ('t2v' in base_lower or 'i2v' in base_lower or 'video' in base_lower or 'lora' in base_lower):
+                search_queries.insert(0, "Kijai")  # 最高优先级 - API 返回 Kijai/WanVideo_comfy
+            
+            # Hunyuan 视频模型 -> Kijai/HunyuanVideo_comfy
+            if 'hunyuan' in base_lower and ('video' in base_lower or 'lora' in base_lower):
+                search_queries.insert(0, "Kijai")
+            
+            # LTX 视频模型
+            if 'ltx' in base_lower:
+                search_queries.insert(0, "Kijai")
+
+            
             # 如果文件名包含 lora 或 LoRA，添加社区仓库搜索
             if 'lora' in base_name.lower():
                 # 常见的 ComfyUI 社区 LoRA 仓库维护者
@@ -305,9 +322,12 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                 # 组合: 第一个有意义的关键词 + 社区关键词
                 if keywords:
                     for term in community_terms:
-                        search_queries.append(f"{keywords[0]} {term}")
+                        sq = f"{keywords[0]} {term}"
+                        if sq not in search_queries:
+                            search_queries.append(sq)
             
             headers = self._get_headers("https://huggingface.co")
+
             
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 all_repos = []
@@ -385,11 +405,20 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                     
                     # 计算仓库名与文件名的相似度
                     repo_name = model_id.split("/")[-1].lower()
+                    repo_owner = model_id.split("/")[0].lower() if "/" in model_id else ""
+                    
+                    # [v3.0.2] 特殊处理：已知的 ComfyUI 社区仓库维护者
+                    # 这些仓库通常包含大量 LoRA 和模型文件，直接扫描
+                    known_community_hubs = {"kijai", "comfyanonymous", "city96", "quantstack"}
+                    is_community_hub = repo_owner in known_community_hubs
                     
                     # 检查关键词匹配
                     match_count = sum(1 for k in keywords[:3] if k.lower() in repo_name or k.lower() in model_id.lower())
                     
-                    if match_count >= 2:
+                    # 降低阈值：社区仓库只需1个关键词匹配，普通仓库需要2个
+                    min_match = 1 if is_community_hub else 2
+                    
+                    if match_count >= min_match or is_community_hub:
                         # 高匹配度 - 递归搜索目录
                         print(f"[HFFileSearch] Scanning repo: {model_id}")
                         exact_match = await search_directory(model_id)
@@ -397,6 +426,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                         if exact_match:
                             results.append(exact_match)
                             return results  # 找到精确匹配，立即返回
+
                         
                         # 即使没找到精确文件，仓库本身也是好候选
                         score = 0.5 + (match_count * 0.15)
