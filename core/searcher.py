@@ -19,7 +19,7 @@ class BaseProvider:
         # Update to newer impersonation to avoid blocking
         # curl_cffi supports chrome124 in newer versions, or verify installed version
         self.impersonate = "chrome124"
-        self.timeout = 15
+        self.timeout = 3  # [v3.3.1] 极限优化: 压缩超时
 
     def _get_headers(self, referer=None):
         # curl_cffi handles User-Agent and TLS natively via 'impersonate'
@@ -826,8 +826,7 @@ class DuckDuckGoProvider(BaseProvider):
                 "Referer": "https://html.duckduckgo.com/"
             }
             
-            # 添加随机延迟避免触发率限制
-            await asyncio.sleep(random.uniform(0.3, 1.0))
+            # [v3.3.1] 删除延迟，依赖连接复用
             
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.post(url, data=data)
@@ -1001,57 +1000,38 @@ class ModelSearcher:
         search_terms = AdvancedTokenizer.extract_search_terms(filename)
         base_name = os.path.splitext(os.path.basename(filename))[0]
         
-        print(f"[AutoMatch] Searching: {filename} | Terms: {search_terms}")
+        # [v3.3.1] 极限优化: 单轮全量并发
+        # 只使用最优搜索词，所有 Provider 同时启动
+        best_term = search_terms[0] if search_terms else base_name
+        print(f"[AutoMatch] Searching: {filename} | Term: {best_term}")
+        
+        import time
+        start_time = time.time()
         
         all_candidates = []
-
         
-        # Progressive Search Strategy (Attempt up to 5 terms)
-        # 1. Raw Stem -> 2. Spaced -> ... -> 5. Deep Tokenized
-        max_attempts = 5
+        # 启动所有 Provider 任务
+        tasks = [provider.search(best_term, base_name) for provider in self.providers]
         
-        for i, term in enumerate(search_terms[:max_attempts]):
-            # If we already have a perfect match from previous (unlikely due to break) or cache, stop.
-            
-            # Skip empty terms
-            if not term or len(term) < 2: continue
-            
-            print(f"[AutoMatch] Attempt {i+1}: Searching for '{term}'")
-            
-            # [v3.1.0] Optimized Parallel Search (Race Mode)
-            # Instead of waiting for ALL providers, we yield as soon as one returns
-            current_candidates = []
-            
-            # Launch all provider tasks
-            tasks = [provider.search(term, base_name) for provider in self.providers]
-            
-            for future in asyncio.as_completed(tasks):
-                try:
-                    res = await future
-                    if res and isinstance(res, list):
-                        curr_batch = []
-                        for item in res:
-                            curr_batch.append(item)
+        # 使用 as_completed 实现早停
+        for future in asyncio.as_completed(tasks):
+            try:
+                res = await future
+                if res and isinstance(res, list):
+                    all_candidates.extend(res)
+                    
+                    # 早停检查: 任何 Provider 返回高分匹配立即停止
+                    all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
+                    if all_candidates and all_candidates[0].get("score", 0) >= 0.7:
+                        elapsed = time.time() - start_time
+                        print(f"[AutoMatch] Fast match in {elapsed:.2f}s: {all_candidates[0]['name']}")
+                        break
                         
-                        current_candidates.extend(curr_batch)
-                        
-                        # Early Exit Check on *each* provider completion
-                        # If any single provider yields a High Confidence match (0.85+), we stop waiting for others.
-                        # This avoids waiting for slow providers (e.g. Google) if Civitai returns instantly.
-                        curr_batch.sort(key=lambda x: x.get("score", 0), reverse=True)
-                        if curr_batch and curr_batch[0].get("score", 0) >= 0.85:
-                            print(f"[AutoMatch] Fast match found ({curr_batch[0]['name']}). Aborting other providers.")
-                            break
-                            
-                except Exception as e:
-                    print(f"[AutoMatch] Provider task failed: {e}")
-
-            # If we found a good match in this term attempt, we stop trying fallback terms
-            all_candidates.extend(current_candidates)
-            current_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
-            if current_candidates and current_candidates[0].get("score", 0) >= 0.85:
-                print(f"[AutoMatch] High confidence match found ({current_candidates[0]['score']:.2f}). Stopping search.")
-                break
+            except Exception as e:
+                print(f"[AutoMatch] Provider task failed: {e}")
+        
+        elapsed = time.time() - start_time
+        print(f"[AutoMatch] Completed in {elapsed:.2f}s")
         
         # Final Sort and Deduplication
         all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)

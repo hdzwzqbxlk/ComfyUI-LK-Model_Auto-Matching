@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.3.0" # HuggingFace Concurrent Search Optimization
+__version__ = "3.3.1" # 极限搜索优化: 单轮并发 + 超时压缩
 __author__ = "LK"
 
 # 初始化核心组件
