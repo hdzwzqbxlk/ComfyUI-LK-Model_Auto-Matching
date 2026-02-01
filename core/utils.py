@@ -373,10 +373,32 @@ class AdvancedTokenizer:
         ext_lower = ext.lower()
         normalized_name = base_name.lower()
         
+        # [v3.3.1] 预处理：清理复杂文件名
+        # 1. Unicode 标点归一化 (中文标点、奇怪的引号等)
+        base_name = re.sub(r'[——–—''""\'\"。，、；：！？]', '_', base_name)
+        base_name = re.sub(r'[^\w\s\-_\.]', '', base_name)  # 移除其他特殊字符
+        
+        # 2. 去除重复词 (如 "loraWan_lora" -> "lora Wan")
+        parts = re.split(r'[-_.\s]+', base_name)
+        seen = set()
+        unique_parts = []
+        for p in parts:
+            p_lower = p.lower()
+            if p_lower not in seen and len(p) >= 2:
+                seen.add(p_lower)
+                unique_parts.append(p)
+        base_name = '_'.join(unique_parts)
+        
+        # 3. 噪声词过滤
+        noise_words = {'average', 'rank', 'ranrank', 'merged', 'merged', 'combined'}
+        unique_parts = [p for p in unique_parts if p.lower() not in noise_words]
+        
+        normalized_name = base_name.lower()
+        
         # === Phase 0: 原始文件名优先 (Direct Search Optimization) ===
         # 用户反馈表明这对 Google 搜索最有效
         # 保留原始标点符号 (. - _)
-        raw_stem = base_name.strip()
+        raw_stem = '_'.join(unique_parts) if unique_parts else base_name.strip()
         
         # GGUF 特殊补全：如果文件名是 GGUF 但不含 gguf 关键字，加上它
         if ext_lower == '.gguf' and 'gguf' not in raw_stem.lower():
