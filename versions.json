@@ -7,7 +7,8 @@
                 "Major: 核心架构升级 - SQLite 本地数据库后端 (替代硬编码字典)",
                 "Feat: 离线索引构建脚本 (scripts/fetch_top_models.py)",
                 "Feat: Curl_cffi 反爬增强 (完美绕过 Cloudflare 403)",
-                "Perf: 优先数据库查询，O(1) 毫秒级响应"
+                "Perf: 优先数据库查询，O(1) 毫秒级响应",
+                "Perf: 竞速模式 (Race Mode) - 极速响应，无需等待慢速引擎"
             ]
         },
         {

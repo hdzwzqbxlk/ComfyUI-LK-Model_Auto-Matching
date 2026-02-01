@@ -909,22 +909,36 @@ class ModelSearcher:
             
             print(f"[AutoMatch] Attempt {i+1}: Searching for '{term}'")
             
-            # Concurrent Search
-            tasks = []
-            for provider in self.providers:
-                tasks.append(provider.search(term, base_name))
-                
-            results_list = await asyncio.gather(*tasks, return_exceptions=True)
-            
+            # [v3.1.0] Optimized Parallel Search (Race Mode)
+            # Instead of waiting for ALL providers, we yield as soon as one returns
             current_candidates = []
-            for res in results_list:
-                if isinstance(res, list):
-                    current_candidates.extend(res)
             
+            # Launch all provider tasks
+            tasks = [provider.search(term, base_name) for provider in self.providers]
+            
+            for future in asyncio.as_completed(tasks):
+                try:
+                    res = await future
+                    if res and isinstance(res, list):
+                        curr_batch = []
+                        for item in res:
+                            curr_batch.append(item)
+                        
+                        current_candidates.extend(curr_batch)
+                        
+                        # Early Exit Check on *each* provider completion
+                        # If any single provider yields a High Confidence match (0.85+), we stop waiting for others.
+                        # This avoids waiting for slow providers (e.g. Google) if Civitai returns instantly.
+                        curr_batch.sort(key=lambda x: x.get("score", 0), reverse=True)
+                        if curr_batch and curr_batch[0].get("score", 0) >= 0.85:
+                            print(f"[AutoMatch] Fast match found ({curr_batch[0]['name']}). Aborting other providers.")
+                            break
+                            
+                except Exception as e:
+                    print(f"[AutoMatch] Provider task failed: {e}")
+
+            # If we found a good match in this term attempt, we stop trying fallback terms
             all_candidates.extend(current_candidates)
-            
-            # Smart Early Exit: If we found a High Confidence match, stop searching
-            # This speeds up the process for easy models (Attempt 1 hit)
             current_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
             if current_candidates and current_candidates[0].get("score", 0) >= 0.85:
                 print(f"[AutoMatch] High confidence match found ({current_candidates[0]['score']:.2f}). Stopping search.")
