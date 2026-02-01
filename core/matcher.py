@@ -155,6 +155,56 @@ class ModelMatcher:
             return basename_map[target_base]
         return None
 
+    def _check_conflicts(self, target_name, candidate_name):
+        """
+        Check for hard conflicts that should disqualify a match.
+        Returns True if conflict exists (should disqualify), False otherwise.
+        """
+        t_lower = target_name.lower()
+        c_lower = candidate_name.lower()
+        
+        # 1. Critical Token Conflicts (Mutually Exclusive)
+        conflict_pairs = [
+            ("t2v", "i2v"),        # Text-to-Video vs Image-to-Video
+            ("mp4", "gif"),
+            ("sdxl", "sd1.5"),
+            ("inpainting", "base"), # Inpainting vs Base models
+            ("refiner", "base"),
+        ]
+        
+        for a, b in conflict_pairs:
+            # Check for conflicting tokens
+            has_a_t = a in t_lower
+            has_b_t = b in t_lower
+            
+            has_a_c = a in c_lower
+            has_b_c = b in c_lower
+            
+            # Case: Target is T2V, Candidate is I2V (and not T2V) -> Conflict
+            if has_a_t and not has_b_t and has_b_c and not has_a_c:
+                return True
+            if has_b_t and not has_a_t and has_a_c and not has_b_c:
+                return True
+                
+        # 2. Rank/Version/Step Numeric Conflict
+        # Extract "rankXXX" or "stepXXX"
+        import re
+        patterns = [
+            r'rank[-_]?(\d+)',
+            r'step[-_]?(\d+)',
+            r'epoch[-_]?(\d+)'
+        ]
+        
+        for pat in patterns:
+            t_vals = re.findall(pat, t_lower)
+            c_vals = re.findall(pat, c_lower)
+            if t_vals and c_vals:
+                # If both define a rank/step, and they differ, it's a mismatch
+                if set(t_vals) != set(c_vals):
+                    return True
+
+        return False
+
     def _find_fuzzy_match(self, item_ctx):
         """Priority 3: Token-based Fuzzy Match with Weights"""
         current_val = item_ctx["current_val"]
@@ -201,6 +251,11 @@ class ModelMatcher:
 
         for idx in candidate_indices:
             info = self.model_list[idx]
+            
+            # [Optimization] Quick conflict check before expensive token calc
+            if self._check_conflicts(current_val, info["filename"]):
+                continue
+            
             cand_base = self._get_basename(info["filename"])
             cand_tokens = set(AdvancedTokenizer.tokenize(cand_base))
             
@@ -261,6 +316,10 @@ class ModelMatcher:
 
         for idx in variant_indices:
             info = self.model_list[idx]
+            
+            # [Optimization] Conflict Check
+            if self._check_conflicts(current_val, info["filename"]):
+                continue
             
             # Category Check
             cand_type = info.get("type", "unknown")

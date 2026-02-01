@@ -13,6 +13,11 @@ mock_session = AsyncMock()
 mock_session.__aenter__.return_value = mock_session
 sys.modules["curl_cffi.requests"].AsyncSession.return_value = mock_session
 
+# Mock ComfyUI modules BEFORE importing core.searcher
+sys.modules["folder_paths"] = MagicMock()
+sys.modules["server"] = MagicMock()
+sys.modules["aiohttp"] = MagicMock()
+
 from core.searcher import CivitaiHashProvider
 
 class TestSearcherCritical(unittest.IsolatedAsyncioTestCase):
