@@ -99,10 +99,10 @@ pip install -r requirements.txt
     - **本地 SQLite 引擎**: 采用全新的数据库架构取代旧版字典，提供毫秒级精确查询。
     - **离线索引构建**: 支持一键获取 Civitai 热门模型数据，构建强大的本地知识库，不再依赖实时网络。
 
-*   **🔍 谷歌元搜索引擎 (Google Meta-Search)**
-    - **API + 网页双引擎**: 当 Civitai/ModelScope 官方 API 搜索失败时，自动接管搜索。
-    - **精准定向打击**: 使用 Google 高级指令定点搜索 `site:modelscope.cn`, `site:civitai.com`, `site:huggingface.co`。
-    - **极高成功率**: 有效解决改名模型、冷门模型或简写模型的搜索难题。
+*   **🔍 全网聚合搜索 (All-Network Aggregation)**
+    - **竞速模式 (Race Mode)**: 同时并发请求 Civitai, HuggingFace, Liblib, ModelScope，毫秒级响应。
+    - **API 优先**: 优先使用官方 API 进行精确检索（支持 Civitai Hash, HF File Search）。
+    - **兜底保障**: 当垂直网站无结果时，自动调用 Google/DuckDuckGo 进行全网补漏。
 
 *   **🛡️ 安全可靠**
     - **零依赖**: 纯 Python 实现，无需复杂环境配置。
