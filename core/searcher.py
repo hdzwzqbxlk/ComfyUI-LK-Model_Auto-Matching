@@ -290,195 +290,274 @@ class HuggingFaceProvider(BaseProvider):
 
 class HuggingFaceFileSearchProvider(BaseProvider):
     """
-    [v3.0] Search HuggingFace for EXACT FILENAMES via HuggingFace Hub API.
+    [v3.3.0] 高性能 HuggingFace 文件搜索
     
-    策略：
-    1. 从文件名提取关键词 (如 Wan, T2V, lora)
-    2. 用 HF API 搜索匹配的仓库
-    3. 检查每个仓库的文件列表，寻找精确匹配
-    
-    不使用 Google/搜索引擎，直接调用 HF API，避免被封禁。
+    优化策略：
+    1. 并发目录遍历 (asyncio.gather)
+    2. 智能剪枝 (仅扫描相关目录)
+    3. 仓库结构缓存 (5分钟TTL)
+    4. 早停机制 (找到匹配立即返回)
     """
+    
+    # 类级别缓存 (所有实例共享)
+    _tree_cache = {}  # {model_id: {"tree": {...}, "ts": timestamp}}
+    CACHE_TTL = 300   # 5 分钟
+    
     def __init__(self, config):
         super().__init__(config)
         self.api_url = "https://huggingface.co/api/models"
         
+    def _extract_keywords(self, filename):
+        """从文件名提取搜索关键词"""
+        base_name = os.path.splitext(filename)[0].lower()
+        # 分词
+        parts = re.split(r'[-_.\s]+', base_name)
+        # 过滤噪声
+        noise = {'average', 'rank', 'bf16', 'fp16', 'fp8', 'safetensors', 'ckpt', 
+                 'q4', 'q5', 'q8', 'k', 'm', 's', 'single', 'merged'}
+        keywords = [p for p in parts if len(p) >= 2 and p not in noise and not p.isdigit()]
+        return set(keywords[:6])  # 最多 6 个关键词
+        
     async def search(self, query, original_filename):
+        """高性能搜索入口"""
+        import time
+        start_time = time.time()
         results = []
+        
         try:
-            # 从文件名提取核心搜索词
-            base_name = os.path.splitext(original_filename)[0]
-            
-            # 提取关键词：Wan, 2.1, T2V, 14B, rCM, lora 等
-            core_parts = base_name.replace("_", " ").replace("-", " ").split()
-            
-            # 优先匹配有意义的关键词
-            keywords = []
-            for part in core_parts:
-                # 跳过纯数字和太短的词
-                if part.isdigit() or len(part) < 2:
-                    continue
-                # 跳过噪声词
-                if part.lower() in {'average', 'rank', 'bf16', 'fp16', 'safetensors'}:
-                    continue
-                keywords.append(part)
-                if len(keywords) >= 4:
-                    break
-            
+            keywords = self._extract_keywords(original_filename)
             if not keywords:
                 return []
             
-            # 多轮搜索策略：
-            # 1. 原始关键词
-            # 2. 针对 ComfyUI LoRA 的常见社区仓库关键词 (Kijai, WanVideo, comfy)
-            search_queries = [
-                " ".join(keywords[:3]),  # 原始关键词
-            ]
+            # 智能仓库检测
+            base_lower = original_filename.lower()
+            priority_repos = []
             
-            # [v3.0.2] 智能仓库名检测：识别常见的模型系列，直接搜索对应仓库
-            base_lower = base_name.lower()
-            
-            # WAN 视频模型系列 -> Kijai/WanVideo_comfy
-            # HF API 搜索 'Kijai' 会返回该仓库
-            if 'wan' in base_lower and ('t2v' in base_lower or 'i2v' in base_lower or 'video' in base_lower or 'lora' in base_lower):
-                search_queries.insert(0, "Kijai")  # 最高优先级 - API 返回 Kijai/WanVideo_comfy
-            
-            # Hunyuan 视频模型 -> Kijai/HunyuanVideo_comfy
-            if 'hunyuan' in base_lower and ('video' in base_lower or 'lora' in base_lower):
-                search_queries.insert(0, "Kijai")
-            
-            # LTX 视频模型
+            # WAN 视频模型 -> Kijai/WanVideo_comfy
+            if 'wan' in base_lower:
+                priority_repos.append("Kijai/WanVideo_comfy")
+            # Hunyuan -> Kijai/HunyuanVideo_comfy  
+            if 'hunyuan' in base_lower:
+                priority_repos.append("Kijai/HunyuanVideo_comfy")
+            # LTX -> Kijai
             if 'ltx' in base_lower:
-                search_queries.insert(0, "Kijai")
-
-            
-            # 如果文件名包含 lora 或 LoRA，添加社区仓库搜索
-            if 'lora' in base_name.lower():
-                # 常见的 ComfyUI 社区 LoRA 仓库维护者
-                community_terms = ["Kijai", "WanVideo", "comfy"]
-                # 组合: 第一个有意义的关键词 + 社区关键词
-                if keywords:
-                    for term in community_terms:
-                        sq = f"{keywords[0]} {term}"
-                        if sq not in search_queries:
-                            search_queries.append(sq)
-            
+                priority_repos.append("Kijai/LTXVideo_comfy")
+                
             headers = self._get_headers("https://huggingface.co")
-
             
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
-                all_repos = []
                 
-                # 多轮搜索
-                for sq in search_queries[:3]:  # 最多3轮
-                    print(f"[HFFileSearch] API Search: {sq}")
-                    encoded_query = urllib.parse.quote(sq)
-                    url = f"{self.api_url}?search={encoded_query}&limit=10"
-                    
+                # Phase 1: 优先搜索已知仓库
+                for repo_id in priority_repos:
+                    print(f"[HFOptimized] Priority scan: {repo_id}")
+                    result = await self._scan_repo_concurrent(session, repo_id, keywords, original_filename)
+                    if result:
+                        elapsed = time.time() - start_time
+                        print(f"[HFOptimized] Found in {elapsed:.2f}s")
+                        return [result]
+                
+                # Phase 2: API 搜索其他仓库
+                search_queries = [" ".join(list(keywords)[:3])]
+                if 'lora' in base_lower:
+                    search_queries.append(f"{list(keywords)[0] if keywords else ''} Kijai")
+                
+                all_repos = []
+                for sq in search_queries[:2]:
+                    encoded = urllib.parse.quote(sq)
+                    url = f"{self.api_url}?search={encoded}&limit=5"
                     resp = await session.get(url)
                     if resp.status_code == 200:
                         try:
                             repos = resp.json()
-                            for repo in repos:
-                                if repo.get("modelId") not in [r.get("modelId") for r in all_repos]:
-                                    all_repos.append(repo)
+                            for r in repos:
+                                mid = r.get("modelId", "")
+                                if mid and mid not in [x.get("modelId") for x in all_repos]:
+                                    if mid not in priority_repos:  # 避免重复扫描
+                                        all_repos.append(r)
                         except:
                             pass
-                    
-                    await asyncio.sleep(0.1)  # 小延迟
                 
-                original_lower = original_filename.lower()
-
-                
-                # 递归搜索子目录的辅助函数
-                async def search_directory(model_id, path=""):
-                    """递归搜索仓库的所有子目录"""
-                    try:
-                        tree_url = f"https://huggingface.co/api/models/{model_id}/tree/main"
-                        if path:
-                            tree_url += f"/{path}"
-                        
-                        await asyncio.sleep(0.15)  # 小延迟
-                        resp = await session.get(tree_url)
-                        
-                        if resp.status_code != 200:
-                            return None
-                        
-                        items = resp.json()
-                        
-                        for item in items:
-                            item_type = item.get("type", "")
-                            item_path = item.get("path", "")
-                            
-                            if item_type == "file":
-                                # 检查文件名匹配
-                                if original_lower in item_path.lower():
-                                    return {
-                                        "source": "HuggingFace (Exact File)",
-                                        "name": model_id,
-                                        "filename": item_path,
-                                        "url": f"https://huggingface.co/{model_id}/blob/main/{item_path}",
-                                        "pageUrl": f"https://huggingface.co/{model_id}/tree/main",
-                                        "score": 0.98
-                                    }
-                            elif item_type == "directory":
-                                # 递归搜索子目录 (最多3层深度)
-                                depth = item_path.count("/")
-                                if depth < 3:
-                                    result = await search_directory(model_id, item_path)
-                                    if result:
-                                        return result
-                        
-                        return None
-                    except Exception as e:
-                        print(f"[HFFileSearch] Dir search error: {e}")
-                        return None
-                
-                # 检查每个仓库
-                for repo in repos[:10]:
+                # Phase 3: 并发扫描候选仓库
+                tasks = []
+                for repo in all_repos[:5]:  # 最多 5 个仓库
                     model_id = repo.get("modelId", "")
-                    if not model_id:
-                        continue
-                    
-                    # 计算仓库名与文件名的相似度
-                    repo_name = model_id.split("/")[-1].lower()
-                    repo_owner = model_id.split("/")[0].lower() if "/" in model_id else ""
-                    
-                    # [v3.0.2] 特殊处理：已知的 ComfyUI 社区仓库维护者
-                    # 这些仓库通常包含大量 LoRA 和模型文件，直接扫描
-                    known_community_hubs = {"kijai", "comfyanonymous", "city96", "quantstack"}
-                    is_community_hub = repo_owner in known_community_hubs
-                    
-                    # 检查关键词匹配
-                    match_count = sum(1 for k in keywords[:3] if k.lower() in repo_name or k.lower() in model_id.lower())
-                    
-                    # 降低阈值：社区仓库只需1个关键词匹配，普通仓库需要2个
-                    min_match = 1 if is_community_hub else 2
-                    
-                    if match_count >= min_match or is_community_hub:
-                        # 高匹配度 - 递归搜索目录
-                        print(f"[HFFileSearch] Scanning repo: {model_id}")
-                        exact_match = await search_directory(model_id)
-                        
-                        if exact_match:
-                            results.append(exact_match)
-                            return results  # 找到精确匹配，立即返回
-
-                        
-                        # 即使没找到精确文件，仓库本身也是好候选
-                        score = 0.5 + (match_count * 0.15)
-                        results.append({
-                            "source": "HuggingFace (Repo Match)",
-                            "name": model_id,
-                            "filename": "Check Files Tab",
-                            "url": f"https://huggingface.co/{model_id}/tree/main",
-                            "pageUrl": f"https://huggingface.co/{model_id}",
-                            "score": score
-                        })
-                    
+                    if model_id:
+                        tasks.append(self._scan_repo_concurrent(session, model_id, keywords, original_filename))
+                
+                if tasks:
+                    # 使用 as_completed 实现早停
+                    for coro in asyncio.as_completed(tasks):
+                        try:
+                            result = await coro
+                            if result and result.get("score", 0) >= 0.9:
+                                elapsed = time.time() - start_time
+                                print(f"[HFOptimized] Found in {elapsed:.2f}s")
+                                return [result]
+                            elif result:
+                                results.append(result)
+                        except Exception as e:
+                            print(f"[HFOptimized] Task error: {e}")
+                
+                elapsed = time.time() - start_time
+                print(f"[HFOptimized] Completed in {elapsed:.2f}s, found {len(results)} results")
+                
         except Exception as e:
-            print(f"[HFFileSearch] Error: {e}")
-        return results
+            print(f"[HFOptimized] Error: {e}")
+        
+        return sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:3]
+    
+    async def _scan_repo_concurrent(self, session, model_id, keywords, original_filename):
+        """并发扫描仓库目录"""
+        import time
+        
+        try:
+            # 检查缓存
+            cache_key = model_id
+            now = time.time()
+            
+            if cache_key in self._tree_cache:
+                cached = self._tree_cache[cache_key]
+                if now - cached["ts"] < self.CACHE_TTL:
+                    tree = cached["tree"]
+                    return self._search_in_tree(tree, model_id, keywords, original_filename)
+            
+            # 获取根目录
+            tree_url = f"https://huggingface.co/api/models/{model_id}/tree/main"
+            resp = await session.get(tree_url)
+            if resp.status_code != 200:
+                return None
+            
+            root_items = resp.json()
+            
+            # 构建树结构 (并发获取子目录)
+            tree = {"files": [], "dirs": {}}
+            dir_tasks = []
+            
+            for item in root_items:
+                item_type = item.get("type", "")
+                item_path = item.get("path", "")
+                
+                if item_type == "file":
+                    tree["files"].append(item_path)
+                elif item_type == "directory":
+                    # 智能剪枝：只扫描与关键词相关的目录
+                    dir_lower = item_path.lower()
+                    should_scan = any(kw in dir_lower for kw in keywords)
+                    # 也扫描常见目录名
+                    common_dirs = {'lora', 'loras', 'models', 'checkpoints', 'weights'}
+                    if any(cd in dir_lower for cd in common_dirs):
+                        should_scan = True
+                    
+                    if should_scan:
+                        dir_tasks.append(self._get_dir_files(session, model_id, item_path))
+            
+            # 并发获取所有相关子目录
+            if dir_tasks:
+                dir_results = await asyncio.gather(*dir_tasks, return_exceptions=True)
+                for i, result in enumerate(dir_results):
+                    if isinstance(result, dict):
+                        dir_path = list(result.keys())[0] if result else None
+                        if dir_path:
+                            tree["dirs"][dir_path] = result[dir_path]
+            
+            # 缓存树结构
+            self._tree_cache[cache_key] = {"tree": tree, "ts": now}
+            
+            # 在树中搜索
+            return self._search_in_tree(tree, model_id, keywords, original_filename)
+            
+        except Exception as e:
+            print(f"[HFOptimized] Repo scan error for {model_id}: {e}")
+            return None
+    
+    async def _get_dir_files(self, session, model_id, dir_path, depth=0):
+        """递归获取目录文件 (最多2层)"""
+        result = {dir_path: {"files": [], "dirs": {}}}
+        
+        if depth >= 2:  # 限制深度
+            return result
+        
+        try:
+            url = f"https://huggingface.co/api/models/{model_id}/tree/main/{dir_path}"
+            resp = await session.get(url)
+            if resp.status_code != 200:
+                return result
+            
+            items = resp.json()
+            sub_dir_tasks = []
+            
+            for item in items:
+                item_type = item.get("type", "")
+                item_path = item.get("path", "")
+                
+                if item_type == "file":
+                    result[dir_path]["files"].append(item_path)
+                elif item_type == "directory" and depth < 1:  # 只递归1层
+                    sub_dir_tasks.append(self._get_dir_files(session, model_id, item_path, depth + 1))
+            
+            if sub_dir_tasks:
+                sub_results = await asyncio.gather(*sub_dir_tasks, return_exceptions=True)
+                for sr in sub_results:
+                    if isinstance(sr, dict):
+                        result[dir_path]["dirs"].update(sr)
+                        
+        except Exception as e:
+            print(f"[HFOptimized] Dir error {dir_path}: {e}")
+        
+        return result
+    
+    def _search_in_tree(self, tree, model_id, keywords, original_filename):
+        """在缓存的树结构中搜索文件"""
+        original_lower = original_filename.lower()
+        original_base = os.path.splitext(original_filename)[0].lower()
+        
+        # 搜索根目录文件
+        for file_path in tree.get("files", []):
+            if self._is_match(file_path, original_lower, original_base):
+                return self._build_result(model_id, file_path, 0.98)
+        
+        # 搜索子目录
+        for dir_path, dir_content in tree.get("dirs", {}).items():
+            for file_path in dir_content.get("files", []):
+                if self._is_match(file_path, original_lower, original_base):
+                    return self._build_result(model_id, file_path, 0.95)
+            
+            # 搜索嵌套子目录
+            for sub_dir, sub_content in dir_content.get("dirs", {}).items():
+                if isinstance(sub_content, dict):
+                    for file_path in sub_content.get("files", []):
+                        if self._is_match(file_path, original_lower, original_base):
+                            return self._build_result(model_id, file_path, 0.92)
+        
+        return None
+    
+    def _is_match(self, file_path, original_lower, original_base):
+        """检查文件是否匹配"""
+        file_lower = file_path.lower()
+        file_base = os.path.splitext(os.path.basename(file_path))[0].lower()
+        
+        # 精确匹配文件名
+        if original_base in file_base or file_base in original_base:
+            return True
+        
+        # 包含原始文件名
+        if original_lower in file_lower:
+            return True
+        
+        return False
+    
+    def _build_result(self, model_id, file_path, score):
+        """构建结果对象"""
+        return {
+            "source": "HuggingFace (Exact File)",
+            "name": model_id,
+            "filename": file_path,
+            "url": f"https://huggingface.co/{model_id}/resolve/main/{file_path}",
+            "pageUrl": f"https://huggingface.co/{model_id}/tree/main",
+            "score": score
+        }
+
+
 
 
 class ModelScopeProvider(BaseProvider):

@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.2.0" # Deep Matching Optimization: Format Block + Speed
+__version__ = "3.3.0" # HuggingFace Concurrent Search Optimization
 __author__ = "LK"
 
 # 初始化核心组件
