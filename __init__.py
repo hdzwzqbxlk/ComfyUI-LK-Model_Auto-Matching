@@ -52,12 +52,37 @@ async def search_models(request):
         
         from .core.scanner import is_valid_model_file
         import asyncio
+        
+        # [v3.0.3] 并发搜索前，先进行本地扫描
         for item in items:
             filename = item.get("current")
+            if not filename: continue
+            
+            # 1. 检查本地是否存在 (暴力搜索所有模型目录)
+            local_path = scanner.find_local_file(filename)
+            if local_path:
+                # 如果本地找到了，直接返回特殊结果
+                results.append({
+                    "original": filename,
+                    "result": {
+                        "source": "Local Disk (Unindexed)",
+                        "name": "Found Locally",
+                        "filename": filename,
+                        "url": "",  # 不需要下载
+                        "pageUrl": "",
+                        "score": 1.0,
+                        "local_path": local_path,
+                        "description": "File exists on disk but not in ComfyUI index. Please Refresh."
+                    }
+                })
+                continue
+
+            # 2. 本地没找到，加入网络搜索队列
             # Strict Filter at API level
-            if filename and is_valid_model_file(filename):
+            if is_valid_model_file(filename):
                 tasks.append(searcher.search(filename, ignore_cache=ignore_cache))
                 original_filenames.append(filename)
+
         
         if not tasks:
             return web.json_response({"downloads": []})

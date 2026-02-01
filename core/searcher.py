@@ -84,11 +84,18 @@ class CivitaiHashProvider(BaseProvider):
                 self._hash_cache[file_path] = file_hash
                 print(f"[CivitaiHash] Hash: {file_hash[:16]}...")
             
-            # 调用 Civitai API
+            # [v3.0.3] 调用 Civitai API - 添加 Origin/Referer 绕过 Cloudflare
             headers = self._get_headers("https://civitai.com")
+            headers["Origin"] = "https://civitai.com"
+            headers["Referer"] = "https://civitai.com/"
+            
             token = self.config.get("civitai_api_key")
             if token:
                 headers["Authorization"] = f"Bearer {token}"
+                print(f"[CivitaiHash] Using API Key: {token[:8]}...")
+            else:
+                print(f"[CivitaiHash] Warning: No API Key configured")
+
             
             url = f"{self.api_url}/{file_hash}"
             

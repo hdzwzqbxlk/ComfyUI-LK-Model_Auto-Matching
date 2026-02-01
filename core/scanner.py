@@ -154,8 +154,6 @@ class ModelIndex:
                                 stat = os.stat(full_path)
                                 disk_files[full_path] = {
                                     "type": type_key,
-                                    "filename": filename, # Store just filename or relative?
-                                    # Current logic uses filename from get_filename_list which is RELATIVE usually.
                                     # But here we probably want the full relative path if it's in a subdir?
                                     # ComfyUI's get_filename_list returns "sub/model.safetensors"
                                     # Let's try to match that behavior.

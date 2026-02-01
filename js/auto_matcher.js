@@ -556,7 +556,7 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
         return;
     }
 
-    // 创建外层容器 (不滚动)
+    // 创建外层容器
     const wrapper = document.createElement("div");
     wrapper.style.cssText = `
         position: relative;
@@ -568,8 +568,7 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
         box-shadow: 0 10px 40px rgba(0,0,0,0.6);
         border: 1px solid rgba(255,255,255,0.08);
         color: #eee;
-        display: flex;
-        flex-direction: column;
+        overflow-y: auto;
     `;
 
     // --- HACK: Hide Default Close Button ---
@@ -579,65 +578,71 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
     `;
     wrapper.appendChild(style);
 
-    // 固定头部 (包含标题和关闭按钮)
-    const header = document.createElement("div");
-    header.style.cssText = `
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 16px 20px;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-        flex-shrink: 0;
-    `;
-
-    // Header 标题
-    const totalCount = matches.length + downloadResults.length + unmatched.length;
-    const h2 = document.createElement("h2");
-    h2.innerText = `Auto Match Results (${totalCount})`;
-    h2.style.cssText = `
-        margin: 0;
-        font-size: 20px;
-        font-weight: 600;
-        color: white;
-    `;
-    header.appendChild(h2);
-
-    // 关闭按钮 X (固定在头部右侧)
+    // [v3.0.3] 关闭按钮 - 使用 fixed 定位，完全脱离内容容器
     const xBtn = document.createElement("button");
     xBtn.innerText = "✕";
     xBtn.title = "Close";
+    xBtn.id = "lk-modal-close-btn";
     xBtn.style.cssText = `
-        background: rgba(60, 60, 60, 0.9);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 16px;
+        position: fixed;
+        top: 0;
+        right: 0;
+        transform: translate(50%, -50%);
+        background: #ff4444;
+        border: 3px solid #222;
+        color: white;
+        font-size: 18px;
+        font-weight: bold;
         cursor: pointer;
-        padding: 4px;
+        padding: 0;
         border-radius: 50%;
-        width: 32px;
-        height: 32px;
+        width: 36px;
+        height: 36px;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.2s ease;
-        flex-shrink: 0;
+        z-index: 10001;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        transition: all 0.15s ease;
     `;
     xBtn.onmouseenter = () => {
-        xBtn.style.color = "white";
-        xBtn.style.background = "rgba(255, 80, 80, 0.9)";
-        xBtn.style.borderColor = "rgba(255, 100, 100, 0.5)";
+        xBtn.style.background = "#ff6666";
+        xBtn.style.transform = "translate(50%, -50%) scale(1.1)";
     };
     xBtn.onmouseleave = () => {
-        xBtn.style.color = "rgba(255, 255, 255, 0.8)";
-        xBtn.style.background = "rgba(60, 60, 60, 0.9)";
-        xBtn.style.borderColor = "rgba(255, 255, 255, 0.15)";
+        xBtn.style.background = "#ff4444";
+        xBtn.style.transform = "translate(50%, -50%) scale(1)";
     };
     xBtn.onclick = () => {
         const modal = wrapper.closest(".comfy-modal");
         if (modal) modal.style.display = "none";
+        xBtn.remove(); // 移除 fixed 按钮
     };
-    header.appendChild(xBtn);
-    wrapper.appendChild(header);
+
+    // Header 标题 (内嵌在 wrapper 内)
+    const totalCount = matches.length + downloadResults.length + unmatched.length;
+    const h2 = document.createElement("h2");
+    h2.innerText = `Auto Match Results (${totalCount})`;
+    h2.style.cssText = `
+        margin: 0 0 15px 0;
+        padding: 16px 20px 0 20px;
+        font-size: 20px;
+        font-weight: 600;
+        color: white;
+    `;
+    wrapper.appendChild(h2);
+
+    // 在显示 modal 后定位 close 按钮
+    setTimeout(() => {
+        const modal = wrapper.closest(".comfy-modal");
+        if (modal) {
+            const rect = modal.getBoundingClientRect();
+            xBtn.style.top = `${rect.top}px`;
+            xBtn.style.right = `${window.innerWidth - rect.right}px`;
+            document.body.appendChild(xBtn); // 添加到 body 最外层
+        }
+    }, 50);
+
 
     // 可滚动内容区域
     const content = document.createElement("div");
@@ -742,42 +747,68 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
             items.forEach(d => {
                 const li = document.createElement("li");
                 li.style.marginTop = "6px";
-                li.style.background = "rgba(0,0,0,0.2)";
                 li.style.padding = "8px 10px";
                 li.style.borderRadius = "6px";
-                li.style.border = "1px solid rgba(255,255,255,0.03)";
-                li.innerHTML = `
-                    <div style="font-weight:600; margin-bottom:6px; color:#ffcc80; font-size:13px;">${d.original}</div>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                        <a href="${d.result.url}" target="_blank" style="
-                            display: inline-flex;
-                            align-items: center;
-                            background: rgba(33, 150, 243, 0.85);
-                            color: white;
-                            text-decoration: none;
-                            padding: 5px 12px;
-                            border-radius: 4px;
-                            font-size: 12px;
-                            font-weight: 500;
-                            transition: background 0.2s;
-                        " onmouseover="this.style.background='#1976d2'" onmouseout="this.style.background='rgba(33, 150, 243, 0.85)'">⬇ 下载/Download (${d.result.source})</a>
+                if (d.result.source === "Local Disk (Unindexed)") {
+                    // [v3.0.3] 本地未索引文件显示
+                    li.style.border = "1px solid rgba(0, 188, 212, 0.3)";
+                    li.style.background = "rgba(0, 188, 212, 0.1)";
+                    li.innerHTML = `
+                        <div style="font-weight:600; color:#4dd0e1; font-size:14px; margin-bottom:4px;">${d.original}</div>
+                        <div style="font-size:12px; color:#b2ebf2; margin-bottom:8px;">${d.result.name} - ${d.result.description}</div>
+                        <div style="font-size:11px; color:#aaa; margin-bottom:8px;">Path: ${d.result.local_path}</div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="font-size:12px; font-weight:bold; color:#4dd0e1;">✅ 已存在本地 / Exists Locally</span>
+                            <span style="font-size:11px; color:#aaa;">(请点击右上角刷新索引 / Please Refresh Index)</span>
+                        </div>
+                    `;
+                } else {
+                    // 常规网络搜索结果
+                    li.style.background = "rgba(0,0,0,0.2)";
+                    li.style.border = "1px solid rgba(255,255,255,0.03)";
+                    li.innerHTML = `
+                        <div style="font-weight:600; color:#ffcc80; font-size:14px; margin-bottom:4px;">${d.original}</div>
+                        <div style="margin-bottom:8px;">
+                            <span style="background:rgba(255,167,38,0.2); color:#ffcc80; padding:2px 6px; border-radius:4px; font-size:11px;">${d.result.source}</span>
+                            ${d.result.score === 1.0 ? '<span style="background:rgba(76,175,80,0.2); color:#81c784; padding:2px 6px; border-radius:4px; font-size:11px; margin-left:4px;">Exact Match</span>' : ''}
+                        </div>
+                        <div style="font-size:12px; color:#aaa; margin-bottom:8px;">${d.result.name}</div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <a href="${d.result.url}" target="_blank" style="
+                                background: #2196f3;
+                                color: white;
+                                padding: 6px 12px;
+                                text-decoration: none;
+                                border-radius: 4px;
+                                font-weight: 600;
+                                font-size: 12px;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                                transition: all 0.2s;
+                                border: none;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                            " onmouseover="this.style.background='#1e88e5';this.style.transform='translateY(-1px)'" onmouseout="this.style.background='#2196f3';this.style.transform='translateY(0)'">⬇️ 下载/Download (${d.result.source.split(' ')[0]})</a>
+                            
+                            ${d.result.pageUrl ? `
+                            <a href="${d.result.pageUrl}" target="_blank" style="
+                                background: rgba(255, 255, 255, 0.1);
+                                color: #ccc;
+                                padding: 5px 10px;
+                                text-decoration: none;
+                                border-radius: 4px;
+                                border: 1px solid rgba(255, 255, 255, 0.15);
+                                display: flex;
+                                align-items: center;
+                                gap: 4px;
+                                font-size: 12px;
+                                transition: all 0.2s;
+                            " onmouseover="this.style.color='white';this.style.borderColor='#999';this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.color='#ccc';this.style.borderColor='rgba(255, 255, 255, 0.15)';this.style.background='rgba(255, 255, 255, 0.1)'">🌍 主页/Page</a>
+                            ` : ''}
+                        </div>
+                    `;
+                }
 
-                        ${d.result.pageUrl ? `
-                        <a href="${d.result.pageUrl}" target="_blank" style="
-                            display: inline-flex;
-                            align-items: center;
-                            background: rgba(255, 255, 255, 0.1);
-                            color: #ccc;
-                            text-decoration: none;
-                            padding: 5px 12px;
-                            border: 1px solid rgba(255, 255, 255, 0.15);
-                            border-radius: 4px;
-                            font-size: 12px;
-                            transition: all 0.2s;
-                        " onmouseover="this.style.color='white';this.style.borderColor='#999';this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.color='#ccc';this.style.borderColor='rgba(255, 255, 255, 0.15)';this.style.background='rgba(255, 255, 255, 0.1)'">🌍 主页/Page</a>
-                        ` : ''}
-                    </div>
-                `;
                 ul.appendChild(li);
             });
             content.appendChild(ul);
