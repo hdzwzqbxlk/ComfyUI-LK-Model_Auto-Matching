@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.1.1" # Core Refactor, Async Perf, Stability Fixes
+__version__ = "3.1.2" # Deep Algo Optimization, Conflict Guard
 __author__ = "LK"
 
 # 初始化核心组件

@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.1.2] - 2026-02-02
+
+### 🧠 Algorithm
+*   **Deep Conflict Guard**: Implemented strict token conflict checking to prevent invalid cross-matches:
+    *   **I2V vs T2V**: Strictly isolated.
+    *   **Rank Awareness**: Now checks numeric values in filenames (`rank83` vs `rank128`).
+    *   **Category Logic**: VAEs will no longer match Checkpoints.
+*   **Variant Optimization**: Applied conflict logic to all matching strategies (Exact, Fuzzy, Variant).
+
 ## [3.1.1] - 2026-02-02
 
 ### ⚡ Optimization
