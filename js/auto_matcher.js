@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const VERSION = "3.1.0";
+const VERSION = "v3.1.3";
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
