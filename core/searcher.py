@@ -5,15 +5,17 @@ import json
 import re
 import random
 import hashlib
+import time
+import uuid
 from curl_cffi.requests import AsyncSession
 from parsel import Selector
 
 try:
     from .utils import AdvancedTokenizer
-    from .kijai_models_db import find_best_match_in_kijai
+    from .models_db import find_best_match_in_db
 except ImportError:
     from utils import AdvancedTokenizer
-    from kijai_models_db import find_best_match_in_kijai
+    from models_db import find_best_match_in_db
 
 class BaseProvider:
     def __init__(self, config=None):
@@ -24,12 +26,21 @@ class BaseProvider:
         self.timeout = 5  # [v3.3.1] 给 Google 更多时间
 
     def _get_headers(self, referer=None):
-        # curl_cffi handles User-Agent and TLS natively via 'impersonate'
-        # We only need to add specific logic headers if API requires them
+        # curl_cffi handles User-Agent natively via 'impersonate', 
+        # BUT explicitly rotating specific User-Agents can help with 'deep camouflage'
+        import random
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0"
+        ]
+        
         headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br",
             "Accept-Language": "en-US,en;q=0.9",
+            "User-Agent": random.choice(user_agents),
+            "Connection": "keep-alive"
         }
         if referer:
             headers["Referer"] = referer
@@ -308,193 +319,163 @@ class HuggingFaceFileSearchProvider(BaseProvider):
     def __init__(self, config):
         super().__init__(config)
         self.api_url = "https://huggingface.co/api/models"
+        self.timeout = 20 # Deep camouflage needs more time
+        self.impersonate = "chrome124" # Update to newer browser
         
-    def _extract_keywords(self, filename):
-        """[v3.3.2] 从文件名提取搜索关键词 (保护 rCM/aniWan 等)"""
+    def _get_weighted_tokens(self, filename):
+        """[v3.4.1] 提取带权重的 tokens"""
         base_name = os.path.splitext(filename)[0]
         
-        # [v3.3.2] CamelCase 分词 (处理 aniWan2114B → ani_Wan_2114_B)
-        base_name = re.sub(r'([a-z])([A-Z])', r'\1_\2', base_name)
-        base_name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', base_name)
-        base_name = base_name.lower()
+        # 1. CamelCase & SnakeCase Split
+        base_name = re.sub(r'(?i)Wan21', 'Wan 2.1', base_name) # Fix aniWan21 -> Wan 2.1
+        base_name = re.sub(r'([a-z])([A-Z])', r'\1 \2', base_name)
+        # 1.1 Letter-Number Split (Fix Wan2.1 -> Wan 2.1, combined with Model Size Split)
+        # Handle 2114B -> 21 14B, 307B -> 30 7B
+        base_name = re.sub(r'(\d+)(14[bB]|7[bB]|8[bB]|72[bB]|32[bB]|1\.5[bB])', r'\1 \2', base_name)
+        # Handle 14BFp -> 14B Fp
+        base_name = re.sub(r'(14[bB]|7[bB]|8[bB]|72[bB]|32[bB]|1\.5[bB])([a-zA-Z])', r'\1 \2', base_name)
         
-        # 分词
-        parts = re.split(r'[-_.\\s]+', base_name)
+        base_name = re.sub(r'([a-z])(?<![vit])(\d)', r'\1 \2', base_name)
+        base_name = re.sub(r'(\d)(?!(?i:[bkmgv]))([a-zA-Z])', r'\1 \2', base_name)
         
-        # [v3.3.2] 保护的关键词 (即使短也保留)
-        protected = {'rcm', 'ani', 'wan', 't2v', 'i2v', 's2v', 'vae', 'lora'}
+        # 2. Split
+        raw_tokens = re.split(r'[-_\s]+', base_name)
         
-        # 过滤噪声
-        noise = {'average', 'rank', 'bf16', 'fp16', 'fp8', 'safetensors', 'ckpt', 
-                 'q4', 'q5', 'q8', 'k', 'm', 's', 'single', 'merged', 'e4m3fn', 'e5m2', 'new'}
-        keywords = [p for p in parts if (len(p) >= 2 or p in protected) and p not in noise and not p.isdigit()]
-        return set(keywords[:8])  # [v3.3.2] 增加到 8 个关键词
+        weighted_tokens = []
+        for t in raw_tokens:
+            if not t: continue
+            
+            # Handle dots (2.1 vs style.lora)
+            sub_tokens = []
+            if re.match(r'^v?[\d]+\.[\d]+$', t): 
+                sub_tokens = [t]
+            else:
+                sub_tokens = t.split('.')
+                
+            for token in sub_tokens:
+                if not token or (len(token) < 2 and not token.isdigit()): continue
+                
+                token_lower = token.lower()
+                weight = 5
+                
+                # Weighting Rules
+                if token_lower in {'kijai', 'comfy', 'org', 'city96', 'bartowski', 'maziyarpanahi', 'mradermacher', 'wan-ai', 'nvidia'}:
+                    weight = 10
+                elif token_lower in {'wan', 'flux', 'qwen', 'sdxl', 'pony', 'hunyuan', 'lumina', 'cosmos', 'deepseek', 'llama', 'mistral', 'gemma'}:
+                    weight = 8
+                elif re.match(r'^v?[\d\.]+$', token_lower) or token_lower in {'xl', 'turbo', 'dev', 'schnell'}:
+                    weight = 6
+                elif re.match(r'^\d+b$', token_lower):
+                    weight = 7
+                elif token_lower in {'gguf', 'lora', 't2v', 'i2v', 'vae', 'controlnet', 'inpaint'}:
+                    weight = 4
+                elif token_lower in {'bf16', 'fp16', 'fp8', 'int8', 'rank', 'average', 'pruned', 'full', 'merged', 'safetensors'}:
+                    weight = 1
+                elif token_lower.isdigit():
+                    weight = 3 
+                    
+                weighted_tokens.append({'token': token_lower, 'weight': weight})
+                
+        return weighted_tokens
+
+    def _extract_keywords(self, filename):
+        """[v3.4.1] 返回高权重关键词列表 (用于搜索)"""
+        weighted = self._get_weighted_tokens(filename)
+        # Sort by weight desc
+        weighted.sort(key=lambda x: x['weight'], reverse=True)
+        return [item['token'] for item in weighted if item['weight'] > 1] # Remove Noise
+        return [item['token'] for item in weighted_tokens if item['weight'] > 1]
         
+    async def _discover_repos(self, session, keywords):
+        """[v3.4.0] 动态仓库发现 (根据高权重关键词搜索 HF 仓库)"""
+        top_keywords = keywords[:3]  # 取前3个高权重词
+        search_query = " ".join(top_keywords)
+        
+        # 特殊处理 LoRA
+        is_lora = any('lora' in k.lower() for k in keywords)
+        
+        print(f"[SmartDiscovery] Searching repos for: '{search_query}'")
+        
+        discovered_repos = []
+        try:
+            # 按下载量排序，找最热门的仓库
+            url = f"{self.api_url}?search={urllib.parse.quote(search_query)}&sort=downloads&direction=-1&limit=8"
+            resp = await session.get(url)
+            if resp.status_code == 200:
+                items = resp.json()
+                for item in items:
+                    repo_id = item.get("modelId")
+                    if not repo_id: continue
+                    
+                    # 简单过滤: 如果是 GGUF 文件，优先找 GGUF 仓库
+                    if any('gguf' in k.lower() for k in keywords) and 'gguf' not in repo_id.lower():
+                        continue
+                        
+                    discovered_repos.append(repo_id)
+        except Exception as e:
+            print(f"[SmartDiscovery] Error: {e}")
+            
+        print(f"[SmartDiscovery] Found {len(discovered_repos)} candidates: {discovered_repos}")
+        return discovered_repos
+
     async def search(self, query, original_filename):
-        """高性能搜索入口"""
+        """[v3.4.0] 智能混合搜索入口"""
         import time
         start_time = time.time()
         results = []
         
         try:
+            # 1. 优先查询全量数据库 (Exact + Civitai Map + Fuzzy) => < 1ms
+            db_match, score = find_best_match_in_db(original_filename)
+            if db_match and score >= 0.85:
+                print(f"[BestMatch] Database hit: {db_match['filename']} (score: {score:.2f})")
+                return [{
+                    "source": f"HuggingFace ({db_match['source']} DB)",
+                    "name": db_match["repo_id"],
+                    "filename": db_match["filename"],
+                    "url": db_match["url"],
+                    "pageUrl": db_match["pageUrl"],
+                    "score": score
+                }]
+            
+            # 2. 提取加权关键词
             keywords = self._extract_keywords(original_filename)
             if not keywords:
                 return []
             
-            # [v3.3.2] 优先使用 Kijai 精确数据库匹配
-            kijai_match, kijai_score = find_best_match_in_kijai(original_filename)
-            if kijai_match and kijai_score >= 0.85:
-                print(f"[HFOptimized] Kijai DB match: {kijai_match} (score: {kijai_score:.2f})")
-                return [{
-                    "source": "HuggingFace (Kijai DB Match)",
-                    "name": "Kijai/WanVideo_comfy",
-                    "filename": kijai_match,
-                    "url": f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{kijai_match}",
-                    "pageUrl": "https://huggingface.co/Kijai/WanVideo_comfy",
-                    "score": kijai_score
-                }]
-            
-            # [v3.3.2] 智能仓库检测 (基于 Kijai/WanVideo_comfy 结构分析)
-            base_lower = original_filename.lower()
-            priority_repos = []
-            
-            # === Kijai/WanVideo_comfy 子目录 ===
-            # 仓库子目录: InfiniteTalk, Lightx2v, Qwen, SCAIL, Wan22-Turbo etc.
-            # [v3.3.2] 添加 rcm/aniwan/causvid/accvid 等关键词
-            if any(kw in base_lower for kw in ['wan', 'infinitetalk', 'lightx2v', 'phantom', 'anisora', 
-                                                'vace', 'accvid', 'causvid', 'movii', 'flf2v', 'magref',
-                                                'rcm', 'aniwan', 'dasiwa', 't2v', 'i2v', 's2v']):
-                priority_repos.append("Kijai/WanVideo_comfy")
-            
-            # === Qwen 系列 ===
-            if any(kw in base_lower for kw in ['qwen', 'qwen-image', 'qwen-edit']):
-                priority_repos.append("Kijai/WanVideo_comfy")  # Qwen 也在 Kijai 仓库
-                priority_repos.append("Kijai/flux-fp8")
-                
-            # === Hunyuan ===
-            if 'hunyuan' in base_lower:
-                priority_repos.append("Kijai/HunyuanVideo_comfy")
-                
-            # === LTX ===
-            if 'ltx' in base_lower:
-                priority_repos.append("Kijai/LTXVideo_comfy")
-                priority_repos.append("Lightricks/LTX-Video")
-                
-            # === Z-Image ===
-            if any(kw in base_lower for kw in ['z-image', 'zimage', 'z_image']):
-                priority_repos.append("Zongjian/Z-Image")
-                
-            # === FLUX ===
-            if 'flux' in base_lower:
-                priority_repos.append("black-forest-labs/FLUX.1-dev")
-                priority_repos.append("Kijai/flux-fp8")
-                priority_repos.append("XLabs-AI/flux-controlnet-collections")
-                
-            # === Comfy-Org 官方仓库 (30个仓库) ===
-            # [v3.3.2] 完整支持 Comfy-Org 组织
-            if any(kw in base_lower for kw in ['sd1.5', 'sd15', 'v1-5', 'stable-diffusion']):
-                priority_repos.append("Comfy-Org/stable-diffusion-v1-5-archive")
-                priority_repos.append("Comfy-Org/stable-diffusion-3.5-fp8")
-            if any(kw in base_lower for kw in ['wan2.1', 'wan21', 'wan_2.1', 'wan_2_1']):
-                priority_repos.append("Comfy-Org/Wan_2.1_ComfyUI_repackaged")
-            if any(kw in base_lower for kw in ['wan2.2', 'wan22', 'wan_2.2', 'wan_2_2']):
-                priority_repos.append("Comfy-Org/Wan_2.2_ComfyUI_Repackaged")
-            if any(kw in base_lower for kw in ['hunyuan', 'hunyuanvideo']):
-                priority_repos.append("Comfy-Org/HunyuanVideo_repackaged")
-                priority_repos.append("Comfy-Org/HunyuanVideo_1.5_repackaged")
-            if any(kw in base_lower for kw in ['qwen-image', 'qwenimage', 'qwen_image']):
-                priority_repos.append("Comfy-Org/Qwen-Image_ComfyUI")
-                priority_repos.append("Comfy-Org/Qwen-Image-Edit_ComfyUI")
-                priority_repos.append("Comfy-Org/Qwen-Image-Layered_ComfyUI")
-            if any(kw in base_lower for kw in ['mochi']):
-                priority_repos.append("Comfy-Org/mochi_preview_repackaged")
-            if any(kw in base_lower for kw in ['hidream', 'hi-dream']):
-                priority_repos.append("Comfy-Org/HiDream-I1_ComfyUI")
-            if any(kw in base_lower for kw in ['lumina']):
-                priority_repos.append("Comfy-Org/Lumina_Image_2.0_Repackaged")
-            if any(kw in base_lower for kw in ['ace-step', 'acestep']):
-                priority_repos.append("Comfy-Org/ACE-Step_ComfyUI_repackaged")
-            if any(kw in base_lower for kw in ['sigclip']):
-                priority_repos.append("Comfy-Org/sigclip_vision_384")
-            if any(kw in base_lower for kw in ['real-esrgan', 'realesrgan']):
-                priority_repos.append("Comfy-Org/Real-ESRGAN_repackaged")
-            if any(kw in base_lower for kw in ['omnigen']):
-                priority_repos.append("Comfy-Org/Omnigen2_ComfyUI_repackaged")
-                
-            # === ByteDance 加速 ===
-            if any(kw in base_lower for kw in ['hyper', 'lightning']):
-                priority_repos.append("ByteDance/Hyper-SD")
-                priority_repos.append("ByteDance/SDXL-Lightning")
-                
-            # === IP-Adapter ===
-            if 'ip-adapter' in base_lower or 'ipadapter' in base_lower:
-                priority_repos.append("h94/IP-Adapter")
-                priority_repos.append("h94/IP-Adapter-FaceID")
-                
-            # 去重
-            priority_repos = list(dict.fromkeys(priority_repos))
-                
             headers = self._get_headers("https://huggingface.co")
-            
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 
-                # Phase 1: 优先搜索已知仓库
-                for repo_id in priority_repos:
-                    print(f"[HFOptimized] Priority scan: {repo_id}")
-                    result = await self._scan_repo_concurrent(session, repo_id, keywords, original_filename)
-                    if result:
-                        elapsed = time.time() - start_time
-                        print(f"[HFOptimized] Found in {elapsed:.2f}s")
-                        return [result]
+                # 3. 动态发现仓库 (不再使用硬编码列表)
+                target_repos = await self._discover_repos(session, keywords)
                 
-                # Phase 2: API 搜索其他仓库
-                search_queries = [" ".join(list(keywords)[:3])]
-                if 'lora' in base_lower:
-                    search_queries.append(f"{list(keywords)[0] if keywords else ''} Kijai")
+                # [Fallback] 如果没搜到，尝试只用前两个词
+                if not target_repos and len(keywords) > 2:
+                     target_repos = await self._discover_repos(session, keywords[:2])
                 
-                all_repos = []
-                for sq in search_queries[:2]:
-                    encoded = urllib.parse.quote(sq)
-                    url = f"{self.api_url}?search={encoded}&limit=5"
-                    resp = await session.get(url)
-                    if resp.status_code == 200:
-                        try:
-                            repos = resp.json()
-                            for r in repos:
-                                mid = r.get("modelId", "")
-                                if mid and mid not in [x.get("modelId") for x in all_repos]:
-                                    if mid not in priority_repos:  # 避免重复扫描
-                                        all_repos.append(r)
-                        except:
-                            pass
-                
-                # Phase 3: 并发扫描候选仓库
+                # 4. 并发深度扫描 (Deep Scan & Fuzzy Match)
                 tasks = []
-                for repo in all_repos[:5]:  # 最多 5 个仓库
-                    model_id = repo.get("modelId", "")
-                    if model_id:
-                        tasks.append(self._scan_repo_concurrent(session, model_id, keywords, original_filename))
+                for repo_id in target_repos:
+                    tasks.append(self._scan_repo_concurrent(session, repo_id, keywords, original_filename))
                 
                 if tasks:
-                    # 使用 as_completed 实现早停
                     for coro in asyncio.as_completed(tasks):
                         try:
                             result = await coro
                             if result and result.get("score", 0) >= 0.9:
                                 elapsed = time.time() - start_time
-                                print(f"[HFOptimized] Found in {elapsed:.2f}s")
+                                print(f"[SmartMatch] Found high confidence match in {elapsed:.2f}s")
                                 return [result]
                             elif result:
                                 results.append(result)
                         except Exception as e:
-                            print(f"[HFOptimized] Task error: {e}")
-                
-                elapsed = time.time() - start_time
-                print(f"[HFOptimized] Completed in {elapsed:.2f}s, found {len(results)} results")
-                
+                            print(f"[SmartMatch] Task error: {e}")
+                            
         except Exception as e:
-            print(f"[HFOptimized] Error: {e}")
-        
+            print(f"[SearchError] {e}")
+            
+        elapsed = time.time() - start_time
+        print(f"[Search] Completed in {elapsed:.2f}s, found {len(results)} results")
         return sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:3]
     
     async def _scan_repo_concurrent(self, session, model_id, keywords, original_filename):
@@ -619,51 +600,83 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         
         # 搜索根目录文件
         for file_path in tree.get("files", []):
-            if self._is_match(file_path, original_lower, original_base):
+            if self._is_match(file_path, original_lower, original_base, repo_id=model_id):
                 return self._build_result(model_id, file_path, 0.98)
         
         # 搜索子目录
         for dir_path, dir_content in tree.get("dirs", {}).items():
             for file_path in dir_content.get("files", []):
-                if self._is_match(file_path, original_lower, original_base):
+                if self._is_match(file_path, original_lower, original_base, repo_id=model_id):
                     return self._build_result(model_id, file_path, 0.95)
             
             # 搜索嵌套子目录
             for sub_dir, sub_content in dir_content.get("dirs", {}).items():
                 if isinstance(sub_content, dict):
                     for file_path in sub_content.get("files", []):
-                        if self._is_match(file_path, original_lower, original_base):
+                        if self._is_match(file_path, original_lower, original_base, repo_id=model_id):
                             return self._build_result(model_id, file_path, 0.92)
         
         return None
     
-    def _is_match(self, file_path, original_lower, original_base):
-        """[v3.3.2] 检查文件是否匹配 - 增强 RapidFuzz 模糊匹配"""
-        file_lower = file_path.lower()
+    def _is_match(self, file_path, original_lower, original_base, repo_id=None):
+        """[v3.4.1] 智能加权匹配 (Weighted Intersection)"""
         file_base = os.path.splitext(os.path.basename(file_path))[0].lower()
         
-        # 精确匹配文件名
-        if original_base in file_base or file_base in original_base:
-            return True
-        
-        # 包含原始文件名
-        if original_lower in file_lower:
-            return True
-        
-        # [v3.3.2] RapidFuzz 模糊匹配 (处理 Wan_2_1_T2V_14B_rCM 缺少 480p 的情况)
+        # 1. 基础模糊匹配 (RapidFuzz) - 快速筛选
+        p_score, t_score = 0, 0
         try:
             from rapidfuzz import fuzz
-            # partial_ratio: 处理缺少部分的情况
-            score = fuzz.partial_ratio(original_base, file_base)
-            if score >= 85:
+            # partial_ratio: 宽容匹配 (85 -> 65 以适应 rCM 这种长尾词)
+            p_score = fuzz.partial_ratio(original_base, file_base)
+            t_score = fuzz.token_set_ratio(original_base, file_base)
+            
+            # [Debug]
+            if p_score > 50 or t_score > 50:
+                print(f"  [AlgoDebug] '{file_base}' vs '{original_base}' -> P:{p_score}, T:{t_score}")
+            
+            # 如果分数非常高，直接通过
+            if p_score >= 90 or t_score >= 95:
                 return True
-            # token_set_ratio: 处理词序不同的情况
-            token_score = fuzz.token_set_ratio(original_base, file_base)
-            if token_score >= 90:
-                return True
+                
         except ImportError:
             pass
+
+        # 2. 智能核心词匹配 (Weighted Intersection)
+        # 解决: wan2.1_t2v_14b vs Wan_2.1_T2V_14B_rCM (rCM 导致模糊匹配分低)
+        tags_source = self._get_weighted_tokens(original_base)
+        tags_target = self._get_weighted_tokens(file_base)
         
+        # [v3.4.1] Add Repo Context (e.g. Wan2.1-T2V-14B repo contains model.safetensors)
+        if repo_id:
+             # Remove Owner from Repo ID? "Wan-AI/Wan2.1" -> "Wan2.1"
+             repo_name = repo_id.split('/')[-1]
+             tags_repo = self._get_weighted_tokens(repo_name)
+             tags_target.extend(tags_repo)
+        
+        # 提取高权重核心词 (Weight >= 6: Core, Version, Size)
+        core_source = {t['token'] for t in tags_source if t['weight'] >= 6}
+        core_target = {t['token'] for t in tags_target if t['weight'] >= 6}
+        
+        if not core_source: # 如果没有核心词，回退到普通逻辑
+            return p_score >= 80
+            
+        # 检查核心词覆盖率
+        # 目标必须包含源文件所有的核心词 (Wan, 2.1, 14B)
+        missing_cores = core_source - core_target
+        
+        # 允许缺失 0 个核心词 (严格模式)
+        if not missing_cores:
+            # 进一步检查次要词 T2V/I2V (Weight 4)
+            type_source = {t['token'] for t in tags_source if t['weight'] == 4}
+            type_target = {t['token'] for t in tags_target if t['weight'] == 4}
+            
+            if type_source and not (type_source & type_target):
+                # 如果源有 T2V 但目标没有 (或者不匹配)，则判定失败
+                # 例如: Wan 2.1 I2V vs Wan 2.1 T2V
+                return False
+                
+            return True
+            
         return False
     
     def _build_result(self, model_id, file_path, score):
@@ -680,15 +693,23 @@ class HuggingFaceFileSearchProvider(BaseProvider):
 
 
 
-class ModelScopeProvider(BaseProvider):
+class ModelScopeFileSearchProvider(BaseProvider):
     """
-    [v3.3.2] 增强版 ModelScope 搜索
-    支持中文模型名优化和多仓库检索
+    [v3.5.0] ModelScope File Search Provider (Reverse-Engineered)
+    
+    Features:
+    1. Uses internal API /api/v1/models/{id}/repo/files for file listing
+    2. Deep Camouflage with random User-Agent and Referer
+    3. Direct Download Link Generation (faster domestic CDN)
+    4. Caching support for repo trees
     """
     
-    # ModelScope 常见仓库映射
+    _tree_cache = {} # {repo_id: {"files": [...], "ts": timestamp}}
+    CACHE_TTL = 300
+    
+    # ModelScope 常见仓库映射 (用于关键词增强)
     PRIORITY_REPOS = {
-        'wan': ['Wuli001/WAN-MoE', 'AI-ModelScope/Wan-Video'],
+        'wan': ['Wan-AI/Wan2.1-T2V-14B', 'Wan-AI/Wan2.1-I2V-14B-480P', 'Wuli001/WAN-MoE'],
         'qwen': ['Qwen/Qwen2.5-VL-7B-Instruct', 'Qwen/Qwen-VL'],
         'flux': ['AI-ModelScope/FLUX.1-dev', 'AI-ModelScope/FLUX.1-schnell'],
         'sd': ['AI-ModelScope/stable-diffusion-v1-5', 'AI-ModelScope/stable-diffusion-xl-base-1.0'],
@@ -697,81 +718,215 @@ class ModelScopeProvider(BaseProvider):
     
     def __init__(self, config):
         super().__init__(config)
-        self.api_url = "https://modelscope.cn/api/v1/dolphin/models"
+        self.api_url = "https://modelscope.cn/api/v1"
+        self.timeout = 25 # Increased timeout for domestic network stability
+        self.impersonate = "chrome124"
+
+    def _get_headers(self, referer=None):
+        headers = super()._get_headers(referer)
+        # ModelScope specific headers
+        headers["Origin"] = "https://modelscope.cn"
+        if referer:
+            headers["Referer"] = referer
+        return headers
 
     async def search(self, query, original_filename):
+        """
+        Implementation Strategy:
+        1. Search for repositories using the general search API
+        2. For top candidates, fetch file lists using the RE API
+        3. Match files against original_filename
+        """
         results = []
+        original_lower = original_filename.lower()
+        original_base = os.path.splitext(original_filename)[0].lower()
+        
+        # 1. Search for Repositories
+        # [v3.3.2] 智能搜索词生成
+        search_terms = [query]
+        
+        # 添加中文搜索词
+        import re as re_module
+        chinese_chars = re_module.findall(r'[\u4e00-\u9fff]+', original_filename)
+        if chinese_chars:
+            search_terms.insert(0, ''.join(chinese_chars))  # 中文优先
+        
+        # 添加模型系列关键词 & 优先仓库
+        priority_target_repos = []
+        for key, repos in self.PRIORITY_REPOS.items():
+            if key in original_lower:
+                search_terms.append(key)
+                priority_target_repos.extend(repos)
+        
+        # Deduplicate terms
+        search_terms = list(dict.fromkeys(search_terms))
+        
+        print(f"[ModelScope] Searching Repos for: {search_terms[:2]}")
+        if priority_target_repos:
+             print(f"[ModelScope] Adding Priority Repos: {priority_target_repos}")
+        
+        search_url = f"{self.api_url}/dolphin/models"
+        headers = self._get_headers(referer="https://modelscope.cn/models")
+        headers["Content-Type"] = "application/json"
+        
+        target_repos = []
+        
         try:
-            # [v3.3.2] 智能搜索词生成
-            base_lower = original_filename.lower()
-            search_terms = [query]
-            
-            # 添加中文搜索词
-            import re as re_module
-            chinese_chars = re_module.findall(r'[\u4e00-\u9fff]+', original_filename)
-            if chinese_chars:
-                search_terms.insert(0, ''.join(chinese_chars))  # 中文优先
-            
-            # 添加模型系列关键词
-            for key, repos in self.PRIORITY_REPOS.items():
-                if key in base_lower:
-                    search_terms.append(key)
-                    
-            print(f"[ModelScopeProvider] Searching API for: {search_terms[:2]}")
-            headers = self._get_headers(referer="https://modelscope.cn/models")
-            headers["Content-Type"] = "application/json"
-            headers["Origin"] = "https://modelscope.cn"
-            
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
-                # 尝试多个搜索词
-                for search_term in search_terms[:2]:
-                    payload = {
-                        "PageSize": 20, 
-                        "PageNumber": 1, 
-                        "SearchText": search_term, 
+                
+                # Try multiple search terms until we find some repos
+                for term in search_terms[:2]:
+                    search_payload = {
+                        "PageSize": 10,
+                        "PageNumber": 1,
+                        "SearchText": term,
                         "Sort": {"SortBy": "Default"}
                     }
                     
-                    response = await session.put(self.api_url, json=payload)
-                    if response.status_code != 200: continue
-                    
                     try:
-                        data = response.json()
-                    except: continue
-                    
-                    if not data.get("Success", False): continue
-                    models = data.get("Data", {}).get("Model", {}).get("Models", [])
-                    
-                    original_lower = original_filename.lower()
-                    
-                    for model in models:
-                        org_name = model.get("Path", "")
-                        model_name = model.get("Name", "")
-                        chinese_name = model.get("ChineseName", "")
+                        # [v3.5.0] Used POST for search (PUT fallback)
+                        resp = await session.post(search_url, json=search_payload)
+                        if resp.status_code != 200: 
+                            resp = await session.put(search_url, json=search_payload)
+                            if resp.status_code != 200: continue
                         
-                        full_path_cleansed = org_name.split("/")[-1] if "/" in org_name else org_name
+                        data = resp.json()
+                        if not data.get("Success"): continue
                         
-                        scores = [
-                            AdvancedTokenizer.calculate_similarity(original_lower, model_name.lower()),
-                            AdvancedTokenizer.calculate_similarity(original_lower, full_path_cleansed.lower()),
-                        ]
-                        if chinese_name:
-                            scores.append(AdvancedTokenizer.calculate_similarity(original_lower, chinese_name.lower()))
+                        models = data.get("Data", {}).get("Model", {}).get("Models", [])
+                        for m in models:
+                            owner = m.get("Path")
+                            name = m.get("Name")
+                            if owner and name:
+                                # ModelScope API returns Path=Owner, Name=RepoName
+                                repo_id = f"{owner}/{name}"
+                                if repo_id not in target_repos:
+                                    target_repos.append(repo_id)
+                        
+                        if target_repos: break # Found something using this term
+                        
+                    except Exception as exc:
+                        print(f"[ModelScope] Search term '{term}' failed: {exc}")
+                        continue
+
+                # [v3.5.1] Merge Priority Repos (High Priority first)
+                # Ensure priority repos are at the front
+                final_repos = []
+                for pr in priority_target_repos:
+                    if pr not in final_repos:
+                        final_repos.append(pr)
+                for tr in target_repos:
+                    if tr not in final_repos:
+                        final_repos.append(tr)
+                
+                # 2. Iterate Repos and Fetch Files
+                tasks = []
+                # Scan top 5 unique repos
+                for repo_id in final_repos[:5]:
+                    tasks.append(self._scan_repo_files(session, repo_id, original_filename, original_base))
+                
+                if tasks:
+                    start_time = time.time()
+                    repo_results = await asyncio.gather(*tasks)
+                    elapsed = time.time() - start_time
+                    print(f"[ModelScope] Scanned {len(tasks)} repos in {elapsed:.2f}s")
+                    
+                    for res_list in repo_results:
+                        if res_list:
+                            results.extend(res_list)
                             
-                        score = max(scores)
-                        
-                        if score > 0.35:
-                            results.append({
-                                "source": "ModelScope",
-                                "name": chinese_name if chinese_name else model_name,
-                                "filename": "Unknown (Go to Files)",
-                                "url": f"https://modelscope.cn/models/{org_name}/files",
-                                "pageUrl": f"https://modelscope.cn/models/{org_name}",
-                                "score": score
-                        })
         except Exception as e:
-            print(f"[ModelScopeProvider] Error: {e}")
+            print(f"[ModelScope] Error: {e}")
+            
+        return sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:5]
+
+    async def _scan_repo_files(self, session, repo_id, original_filename, original_base):
+        """Fetch files for a specific repo using hidden API"""
+        results = []
+        
+        # Check Cache
+        now = time.time()
+        files = []
+        if repo_id in self._tree_cache:
+            cache = self._tree_cache[repo_id]
+            if now - cache["ts"] < self.CACHE_TTL:
+                files = cache["files"]
+            else:
+                files = await self._fetch_file_tree(session, repo_id)
+        else:
+            files = await self._fetch_file_tree(session, repo_id)
+            
+        if not files:
+            print(f"[ModelScope] No files found in {repo_id}")
+            return []
+        
+        # Match Files
+        for file_info in files:
+            file_path = file_info.get("Path")
+            file_type = file_info.get("Type")
+            
+            # Debug
+            # print(f"[ModelScopeDebug] {repo_id} -> {file_path} ({file_type})")
+            
+            if not file_path or file_type != "blob": continue
+            if not file_path.endswith(('.safetensors', '.ckpt', '.pt', '.pth', '.bin', '.gguf')): continue
+            
+            fname_base = os.path.splitext(os.path.basename(file_path))[0].lower()
+            
+            # Simple fuzzy match
+            from rapidfuzz import fuzz
+            p_score = fuzz.partial_ratio(original_base, fname_base)
+            
+            # print(f"[ModelScopeDebug] Checking {fname_base} vs {original_base} -> {p_score}")
+            
+            # If high confidence, add result
+            if p_score > 60:
+                # Direct Download Link Generation
+                # Format: https://modelscope.cn/api/v1/models/{repo_id}/repo?Revision=master&FilePath={file_path}
+                download_url = f"https://modelscope.cn/api/v1/models/{repo_id}/repo?Revision=master&FilePath={file_path}"
+                
+                results.append({
+                    "source": "ModelScope (Direct)",
+                    "name": f"{repo_id}/{os.path.basename(file_path)}",
+                    "filename": os.path.basename(file_path),
+                    "url": download_url,
+                    "pageUrl": f"https://modelscope.cn/models/{repo_id}/files",
+                    "score": p_score / 100.0
+                })
+        
         return results
+
+    async def _fetch_file_tree(self, session, repo_id):
+        """Call strict API /api/v1/models/.../repo/files"""
+        url = f"{self.api_url}/models/{repo_id}/repo/files"
+        
+        # Try master then main
+        revisions = ["master", "main"]
+        
+        for rev in revisions:
+            params = {
+                "Revision": rev,
+                "Recursive": "True",
+                "Root": ""
+            }
+            headers = {
+                "Referer": f"https://modelscope.cn/models/{repo_id}/files"
+            }
+            
+            try:
+                resp = await session.get(url, params=params, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    files = data.get("Data", {}).get("Files", [])
+                    
+                    if files:
+                        # Cache success
+                        self._tree_cache[repo_id] = {"files": files, "ts": time.time()}
+                        return files
+            except Exception as e:
+                print(f"[ModelScope] Tree fetch error {repo_id} ({rev}): {e}")
+                
+        return []
 
 class GoogleOmniProvider(BaseProvider):
     """
@@ -1064,7 +1219,7 @@ class ModelSearcher:
             CivitaiProvider(self.config),
             HuggingFaceProvider(self.config),
             LiblibProvider(self.config),
-            ModelScopeProvider(self.config),
+            ModelScopeFileSearchProvider(self.config),   # [v3.5.0] ModelScope Direct File Search
             GoogleOmniProvider(self.config),
             DuckDuckGoProvider(self.config)
         ]
@@ -1165,14 +1320,24 @@ class ModelSearcher:
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers
             print(f"[AutoMatch] 中文模型 -> 优先 Liblib/ModelScope")
-        elif is_flux_wan_qwen:
-            # FLUX/Wan/Qwen -> 优先 HuggingFace
+        elif bool(re_module.search(r'(wan|qwen)', base_name, re_module.IGNORECASE)):
+            # [v3.5.0] Wan/Qwen (国产优选) -> 优先 ModelScope
+            priority_providers = [
+                p for p in self.providers 
+                if 'modelscope' in type(p).__name__.lower()
+            ]
+            secondary_providers = [p for p in self.providers if p not in priority_providers]
+            ordered_providers = priority_providers + secondary_providers
+            print(f"[AutoMatch] Wan/Qwen (国产) -> 优先 ModelScope")
+        elif bool(re_module.search(r'(flux|ltx|z[-_]?image)', base_name, re_module.IGNORECASE)):
+            # GRAVITY-NOTE: Flux 等国际模型 -> 优先 HuggingFace
             priority_providers = [
                 p for p in self.providers 
                 if 'huggingface' in type(p).__name__.lower()
             ]
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers
+            print(f"[AutoMatch] FLUX/Global -> 优先 HuggingFace")
             print(f"[AutoMatch] FLUX/Wan/Qwen 系列 -> 优先 HuggingFace")
         else:
             ordered_providers = self.providers

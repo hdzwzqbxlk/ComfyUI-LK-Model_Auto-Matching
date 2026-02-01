@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.4.2] - 2026-02-02
+### Added
+- **Smart Weighted Tokenizer**: Implemented intelligent filename parsing that correctly handles:
+    - Version numbers (e.g., `Wan2.1` -> `Wan`, `2.1`).
+    - Model sizes (e.g., `14B`, `7B`).
+    - Protected technical terms (`T2V`, `I2V`, `v4`).
+- **Weighted Intersection Matching**: New matching engine that prioritizes core tokens (Name + Version + Size) over fuzzy string similarity, solving failures with generic filenames in specific repos.
+- **Dynamic Repository Discovery**: 
+    - Automatically discovers official repositories (e.g., `Wan-AI`, `nvidia`) via Hugging Face API based on keywords.
+    - Repository-aware matching: Uses the repository name as context when matching files.
+- **Deep Network Camouflage (Phase 3)**:
+    - Upgraded network engine to impersonate `chrome124`.
+    - Implemented random User-Agent rotation to bypass Civitai/Cloudflare blocking.
+- **Special Case Normalization (Phase 3)**:
+    - Added rule for `Wan21` -> `Wan 2.1` to handle non-standard version naming (`aniWan21...`).
+
+### Fixed
+- Fixed matching failure for `Wan_2.1_T2V_14B_rCM.safetensors` due to tokenizer splitting errors.
+- Fixed inability to match files with generic names (e.g., `model.safetensors`) when they reside in correctly named repositories.
+- Fixed tokenization for `14BFp` -> `14B Fp` (Model size stuck to suffix).
+
+
 ## [v3.3.2] - 2026-02-02
 ### 🧠 深度算法优化 (基于 204 个模型样本)
 - **CamelCase 智能分词**: `DasiwaWAN22` → `Dasiwa WAN 22`
