@@ -250,28 +250,44 @@ class AdvancedTokenizer:
         """
         将文本拆分为 token 集合 (v2.0: 语义锚点优先)
         """
-        # 使用统一预处理
-        text = AdvancedTokenizer._normalize_text(text)
+        text = text.lower()
+        
+        # [v2.0] Pre-process: Replace delimiters that act as word boundaries (but keep dots for version numbers)
+        # 将 _ 和 - 替换为空格，以便正则 \b 生效
+        text_for_regex = re.sub(r'[_\-]', ' ', text)
         
         tokens = []
         
         # [v2.0] 语义保留正则 (Semantic Preservation Regex)
         # 强制保留: Wan2.1, SDXL, Pony, v1.5, 2.1, Flux.1, SD1.5
-        # 避免被拆分为: wan, 2, 1
         preserve_pattern = r"(?i)\b(v\d+(\.\d+)?|sdxl|pony|wan\d*(\.\d+)?|flux[\.\-]1|sd\d+(\.\d+)?)\b"
         
         # 1. 提取保留词 (Preserved Semantic Tokens)
-        preserved_matches = re.finditer(preserve_pattern, text)
+        # 注意：这里使用 text_for_regex 进行匹配，但在原始 text 中进行替换/删除
+        preserved_matches = re.finditer(preserve_pattern, text_for_regex)
+        
+        # 我们需要一个掩码或替换列表来避免在 normalize 时再次处理这些词
+        # 简单策略：将匹配到的词存入 tokens，并将 text 中的对应部分替换为空格
+        # 但要注意 text_for_regex 和 text 的索引可能不对齐 (如果只是替换字符长度不变则没问题)
+        # _ 和 - 替换为空格，长度不变。
+        
         for match in preserved_matches:
-            token = match.group(0).lower()
+            token = match.group(0).lower() # 已经是 lower
             tokens.append(token)
-            # 将原文中的该词替换为空格，避免重复分词
-            text = text.replace(match.group(0), " ")
+            # 在原始 text 中移除 (替换为空格)
+            # 由于 text_for_regex 只是替换了分隔符，内容是一样的，我们可以用 token 去 replace text
+            # 但要注意防止部分匹配替换 (e.g. wan2.1 vs wan2.10)
+            # 这里的 replace 比较粗暴，但对于文件名通常足够
+            text = text.replace(token, " ")
             
-        # 2. 如果是 Wan 系列，强制添加 'wan' 基础词以确保兼容性
-        for t in tokens:
-            if t.startswith("wan"):
-                tokens.append("wan")
+        # 2. 补救措施：Wan 系列添加 'wan'
+        if "wan" in text_for_regex: 
+             has_wan_prefix = any(t.startswith("wan") for t in tokens)
+             if has_wan_prefix and "wan" not in tokens:
+                 tokens.append("wan")
+
+        # 3. 统一预处理 (移除点、特殊符号等)
+        text = AdvancedTokenizer._normalize_text(text)
 
         for part in text.split():
             # 4. Alias Expansion (on individual parts)

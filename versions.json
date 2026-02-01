@@ -1,6 +1,15 @@
 {
     "versions": [
         {
+            "version": "2.0.2",
+            "date": "2026-02-01",
+            "changes": [
+                "Critical Fix: Infinite Loop in Tokenizer (Scanning Hang)",
+                "Fix: Improved 'Wan2.1' logic to prevent splitting (wan2 + 1)",
+                "Perf: Optimized Tokenizer Speed (~20ms/10k calls)"
+            ]
+        },
+        {
             "version": "2.0.1",
             "date": "2026-02-01",
             "changes": [

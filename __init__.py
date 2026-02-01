@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "2.0.1" # Hotfix: Frontend JS crash fix
+__version__ = "2.0.2" # Fix: Tokenizer Infinite Loop
 __author__ = "LK"
 
 # 初始化核心组件
