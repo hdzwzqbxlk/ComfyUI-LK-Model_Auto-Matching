@@ -348,8 +348,51 @@ class ModelMatcher:
         return None
 
     def _find_legacy_match(self, item_ctx, ctx):
-        """Priority 5: Difflib Backup"""
+        """Priority 5: RapidFuzz Backup (Replaces slow difflib)"""
+        try:
+            from rapidfuzz import process, fuzz
+        except ImportError:
+            # Fallback if rapidfuzz missing (though it's in requirements)
+            import difflib
+            return self._find_legacy_match_difflib(item_ctx, ctx)
+
         target_base = item_ctx["target_base"]
+        current_val = item_ctx["current_val"]
+        expected_types = item_ctx["expected_types"]
+        basename_map = ctx["basename_map"]
+        
+        available_names = list(basename_map.keys())
+        
+        # Use simple ratio or partial_ratio
+        # score_cutoff=85 equivalent to 0.85
+        match = process.extractOne(
+            target_base, 
+            available_names, 
+            scorer=fuzz.ratio, 
+            score_cutoff=85
+        )
+        
+        if match:
+            best_name, score, idx = match
+            candidate_info = basename_map[best_name]
+            
+            # [Fix] Apply Conflict Check
+            if self._check_conflicts(current_val, candidate_info["filename"]):
+                return None
+            
+            # Category Check
+            cand_type = candidate_info.get("type", "unknown")
+            if expected_types and cand_type not in expected_types:
+                return None
+                
+            return candidate_info
+            
+        return None
+
+    def _find_legacy_match_difflib(self, item_ctx, ctx):
+        """Fallback for when rapidfuzz is missing"""
+        target_base = item_ctx["target_base"]
+        current_val = item_ctx["current_val"]
         expected_types = item_ctx["expected_types"]
         basename_map = ctx["basename_map"]
         
@@ -357,9 +400,14 @@ class ModelMatcher:
         similars = difflib.get_close_matches(target_base, available_names, n=1, cutoff=0.85)
         
         if similars:
-            match = basename_map[similars[0]]
-            cand_type = match.get("type", "unknown")
+            match_info = basename_map[similars[0]]
+            
+            # [Fix] Apply Conflict Check here too
+            if self._check_conflicts(current_val, match_info["filename"]):
+                return None
+                
+            cand_type = match_info.get("type", "unknown")
             if expected_types and cand_type not in expected_types:
                 return None
-            return match
+            return match_info
         return None
