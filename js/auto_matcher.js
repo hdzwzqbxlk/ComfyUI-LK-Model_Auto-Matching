@@ -770,7 +770,7 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
                         <div style="font-weight:600; color:#ffcc80; font-size:14px; margin-bottom:4px;">${d.original}</div>
                         <div style="margin-bottom:8px;">
                             <span style="background:rgba(255,167,38,0.2); color:#ffcc80; padding:2px 6px; border-radius:4px; font-size:11px;">${d.result.source}</span>
-                            ${d.result.score === 1.0 ? '<span style="background:rgba(76,175,80,0.2); color:#81c784; padding:2px 6px; border-radius:4px; font-size:11px; margin-left:4px;">Exact Match</span>' : ''}
+                            ${d.result.score === 1.0 ? '<span style="background:rgba(76,175,80,0.2); color:#81c784; padding:2px 6px; border-radius:4px; font-size:11px; margin-left:4px;">全字段精确匹配</span>' : ''}
                         </div>
                         <div style="font-size:12px; color:#aaa; margin-bottom:8px;">${d.result.name}</div>
                         <div style="display:flex; align-items:center; gap:8px;">

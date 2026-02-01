@@ -153,9 +153,16 @@ class CivitaiProvider(BaseProvider):
         try:
             print(f"[CivitaiProvider] Searching API for: {query}")
             headers = self._get_headers("https://civitai.com")
+            
+            # [Fix] Add Origin/Referer to satisfy Cloudflare/Anti-bot checks
+            headers["Origin"] = "https://civitai.com"
+            headers["Referer"] = "https://civitai.com/"
+            
             token = self.config.get("civitai_api_key")
             if token:
                 headers["Authorization"] = f"Bearer {token}"
+                # Log that key is being used (masked)
+                print(f"[CivitaiProvider] Authenticated search (Key ends found)")
 
             encoded_query = urllib.parse.quote(query)
             # Fetch more results to increase hit rate
@@ -164,7 +171,10 @@ class CivitaiProvider(BaseProvider):
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.get(url)
                 if response.status_code != 200: 
-                    print(f"[CivitaiProvider] API Error {response.status_code}")
+                    print(f"[CivitaiProvider] API Error {response.status_code} (Check API Key or Network)")
+                    # Detailed debug for 403
+                    if response.status_code == 403:
+                        print(f"[CivitaiProvider] 403 Forbidden. Headers sent: {headers.keys()}")
                     return []
                 
                 try:
