@@ -19,7 +19,7 @@ class BaseProvider:
         # Update to newer impersonation to avoid blocking
         # curl_cffi supports chrome124 in newer versions, or verify installed version
         self.impersonate = "chrome124"
-        self.timeout = 3  # [v3.3.1] 极限优化: 压缩超时
+        self.timeout = 5  # [v3.3.1] 给 Google 更多时间
 
     def _get_headers(self, referer=None):
         # curl_cffi handles User-Agent and TLS natively via 'impersonate'
@@ -643,8 +643,7 @@ class GoogleOmniProvider(BaseProvider):
             
             headers = self._get_headers("https://www.google.com/")
             
-            # 添加随机延迟避免触发率限制
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            # [v3.3.1] 移除延迟，依赖连接复用
             
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.get(url)
