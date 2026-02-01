@@ -48,14 +48,29 @@ The plugin automatically detects and matches the following model types:
     ```bash
     git clone https://github.com/hdzwzqbxlk/ComfyUI-LK-Model_Auto-Matching.git
     ```
-3.  Restart ComfyUI.
+3.  **Install Dependencies**:
+    ```bash
+    cd ComfyUI-LK-Model_Auto-Matching
+    pip install -r requirements.txt
+    ```
+4.  Restart ComfyUI.
 
 #### Method 2: Update
 If you already have it installed, simply navigate to the folder and pull the latest changes:
 ```bash
 cd ComfyUI/custom_nodes/ComfyUI-LK-Model_Auto-Matching
 git pull
+pip install -r requirements.txt
 ```
+
+### 🚀 Advanced Features (New in v3.0)
+*   **Database-Driven Matching**: The system now uses a high-performance local SQLite database (`core/data/models.db`) for instant and accurate lookups, reducing reliance on slow network searches.
+*   **Offline Indexing**: You can populate your local database with thousands of popular Civitai models to make the matcher even smarter.
+    *   **How to use**:
+        ```bash
+        python scripts/fetch_top_models.py
+        ```
+        This script fetches the top downloaded models from Civitai and adds them to your local index.
 
 ### 🎮 Usage Guide
 1.  **Load a Workflow**: Open a workflow that contains missing models (nodes highlighting in red).
@@ -80,15 +95,14 @@ git pull
     - **交叉变体识别**: 自动识别同模型的不同版本（如 `bf16` vs `fp16`, `Q4_K_M` vs `Q5_K_M`），大幅提高 Workflow 兼容性。
     - **严格格式卫士**: 强制文件类型隔离（如 `GGUF` 不会匹配 `Safetensors`），杜绝模型加载报错。
 
+*   **🚀 极速数据库模式 (New)**
+    - **本地 SQLite 引擎**: 采用全新的数据库架构取代旧版字典，提供毫秒级精确查询。
+    - **离线索引构建**: 支持一键获取 Civitai 热门模型数据，构建强大的本地知识库，不再依赖实时网络。
+
 *   **🔍 谷歌元搜索引擎 (Google Meta-Search)**
     - **API + 网页双引擎**: 当 Civitai/ModelScope 官方 API 搜索失败时，自动接管搜索。
     - **精准定向打击**: 使用 Google 高级指令定点搜索 `site:modelscope.cn`, `site:civitai.com`, `site:huggingface.co`。
     - **极高成功率**: 有效解决改名模型、冷门模型或简写模型的搜索难题。
-
-*   **⚡ 极速体验 (Performance)**
-    - **本地倒排索引**: 毫秒级本地模型查找。
-    - **智能缓存系统**: 网络搜索结果自动缓存，二次搜索零延迟。
-    - **增量更新**: 点击 "🔄" 按钮仅扫描变动文件，GB 级大模型也能秒级处理。
 
 *   **🛡️ 安全可靠**
     - **零依赖**: 纯 Python 实现，无需复杂环境配置。
@@ -117,14 +131,27 @@ git pull
     ```bash
     git clone https://github.com/hdzwzqbxlk/ComfyUI-LK-Model_Auto-Matching.git
     ```
-3.  重启 ComfyUI。
+3.  **安装依赖**：
+    ```bash
+    cd ComfyUI-LK-Model_Auto-Matching
+    pip install -r requirements.txt
+    ```
+4.  重启 ComfyUI。
 
 #### 方式 2: 更新插件
 如果你已经安装了旧版本，请在插件目录下运行更新命令：
 ```bash
 cd ComfyUI/custom_nodes/ComfyUI-LK-Model_Auto-Matching
 git pull
+pip install -r requirements.txt
 ```
+
+### 🚀 高级功能 (v3.0 新增)
+*   **离线索引增强**: 想要更强大的本地匹配能力？运行以下脚本即可自动从 Civitai 获取流行模型数据并存入本地数据库：
+    ```bash
+    python scripts/fetch_top_models.py
+    ```
+    (提示：该脚本会自动绕过部分反爬验证，建议定期运行以保持数据库最新)
 
 ### 🎮 使用教程
 1.  **加载工作流**: 导入任何包含报错（红色节点）的工作流。

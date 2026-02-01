@@ -7,47 +7,59 @@ from rapidfuzz import process as rf_process
 USE_RAPIDFUZZ = True
 
 # 噪声后缀词（仅过滤纯技术后缀，不过滤版本号和模型组件名）
-NOISE_SUFFIXES = {
-    # 精度格式
+import json
+
+# ============================================================
+# 数据加载逻辑 (Phase 1: JSON-driven)
+# ============================================================
+
+def load_models_data():
+    """从 models_data.json 加载配置，如果失败则返回默认值"""
+    json_path = os.path.join(os.path.dirname(__file__), 'data', 'models_data.json')
+    data = {}
+    
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"[ModelMatcher] Error loading models_data.json: {e}")
+    
+    return data
+
+_DATA = load_models_data()
+
+# 1. 噪声后缀词
+NOISE_SUFFIXES = set(_DATA.get('noise_suffixes', {
     'fp16', 'fp32', 'bf16', 'fp8', 'int8', 'int4', 'q4', 'q8', 'gguf', 'f16', 'f32',
-    # 训练变体
     'pruned', 'ema', 'emaonly', 'noembed', 'noema',
-    # 文件扩展名
     'safetensors', 'ckpt', 'pt', 'bin', 'pth', 'onnx', 'pkl',
-    # 修复/最终版本
     'fix', 'fixed', 'final', 'official', 'release',
-    # 内容分级
     'sfw', 'nsfw',
-    # 速度优化变体
     'lightning', '8steps', '4steps', '2steps', 'turbo', 'lcm', 'hyper',
-}
+}))
 
-# 核心模型词保护列表（这些词永远不会被过滤）
-PROTECTED_TERMS = {
-    # SD 系列
+# 2. 核心模型词保护列表
+PROTECTED_TERMS = set(_DATA.get('protected_terms', {
     'sd', 'sd15', 'sd21', 'sd3', 'sdxl', 'stable', 'diffusion',
-    'base', 'refiner',  # SDXL 组件
-    # FLUX 系列
+    'base', 'refiner',
     'flux', 'flux1', 'schnell', 'dev',
-    # 模型类型
     'vae', 'unet', 'lora', 'controlnet', 'clip', 'embeddings',
-    # 其他常见模型
     'qwen', 'llama', 'mistral', 'realvis', 'juggernaut',
-    'inpainting',  # 功能变体
-}
+    'inpainting',
+}))
 
-# 常见模型族识别模式（用于智能搜索词生成）
-MODEL_PATTERNS = {
-    # (匹配模式, 替代搜索词)
+# 3. 常见模型族识别模式
+MODEL_PATTERNS = _DATA.get('model_patterns', {
     r'v1[\-_\.]?5': 'stable diffusion 1.5',
     r'v2[\-_\.]?1': 'stable diffusion 2.1',
     r'sd[\-_]?xl': 'stable diffusion xl',
     r'sd[\-_]?3': 'stable diffusion 3',
     r'flux[\-_\.]?1': 'flux.1',
-}
+})
 
-# 常见模型名缩写映射（帮助搜索标准化）
-MODEL_ALIASES = {
+# 4. 常见模型名缩写映射
+MODEL_ALIASES = _DATA.get('model_aliases', {
     'sdxl': 'stable diffusion xl',
     'sd15': 'stable diffusion 1.5',
     'sd21': 'stable diffusion 2.1',
@@ -56,175 +68,28 @@ MODEL_ALIASES = {
     'realvis': 'realvisxl',
     'jugg': 'juggernaut',
     'qwen': 'qwen',
-    # New Model Families
-    'wan': 'wan video',
-    'z_image': 'z-image',
-    'hunyuan': 'hunyuan video',
-    'mochi': 'mochi 1',
-    'lumina': 'lumina image 2.0',
-    'kolors': 'kolors',
-    'auraflow': 'auraflow',
-    'cosmos': 'nvidia cosmos',
-    'ltx': 'ltx video',
-}
+})
 
-# ============================================================
-# ComfyUI 官方主流模型精确映射表
-# 来源: https://comfyanonymous.github.io/ComfyUI_examples/
-# 格式: {模型基础名(无扩展名): HuggingFace 仓库 ID}
-# ============================================================
-COMFYUI_POPULAR_MODELS = {
-    # === SD1.5 系列 ===
+# 5. ComfyUI 官方主流模型精确映射表
+COMFYUI_POPULAR_MODELS = _DATA.get('popular_models', {
     'v1-5-pruned-emaonly': 'Comfy-Org/stable-diffusion-v1-5-archive',
-    'v1-5-pruned-emaonly-fp16': 'Comfy-Org/stable-diffusion-v1-5-archive',
-    'v1-5-pruned': 'Comfy-Org/stable-diffusion-v1-5-archive',
-    '512-inpainting-ema': 'runwayml/stable-diffusion-inpainting',
-    
-    # === SDXL 系列 ===
     'sd_xl_base_1.0': 'stabilityai/stable-diffusion-xl-base-1.0',
-    'sd_xl_base_1.0_0.9vae': 'stabilityai/stable-diffusion-xl-base-1.0',
-    'sd_xl_refiner_1.0': 'stabilityai/stable-diffusion-xl-refiner-1.0',
-    'sd_xl_refiner_1.0_0.9vae': 'stabilityai/stable-diffusion-xl-refiner-1.0',
-    'sdxl_vae': 'madebyollin/sdxl-vae-fp16-fix',
-    'juggernautXL_juggXIByRundiffusion': 'RunDiffusion/Juggernaut-XI-v11',
-    
-    # === SD3 / SD3.5 系列 ===
-    'sd3_medium': 'stabilityai/stable-diffusion-3-medium',
-    'sd3_medium_incl_clips': 'stabilityai/stable-diffusion-3-medium',
-    'sd3.5_large': 'stabilityai/stable-diffusion-3.5-large',
-    'sd3.5_large_turbo': 'stabilityai/stable-diffusion-3.5-large-turbo',
-    'sd3.5_medium': 'stabilityai/stable-diffusion-3.5-medium',
-    'sd3.5_large_fp8_scaled': 'Comfy-Org/stable-diffusion-3.5-fp8',
-    'sd3.5_medium_incl_clips_t5xxlfp8scaled': 'Comfy-Org/stable-diffusion-3.5-fp8',
-    
-    # === Flux 系列 ===
     'flux1-dev': 'black-forest-labs/FLUX.1-dev',
-    'flux1-schnell': 'black-forest-labs/FLUX.1-schnell',
-    'flux1-dev-fp8': 'Comfy-Org/flux1-dev',
-    'flux1-schnell-fp8': 'Comfy-Org/flux1-schnell',
-    
-    # === 文本编码器 / CLIP ===
-    'clip_l': 'Comfy-Org/stable-diffusion-3.5-fp8',
-    'clip_g': 'Comfy-Org/stable-diffusion-3.5-fp8',
-    't5xxl': 'comfyanonymous/flux_text_encoders',
-    't5xxl_fp16': 'comfyanonymous/flux_text_encoders',
-    't5xxl_fp8_e4m3fn': 'comfyanonymous/flux_text_encoders',
-    't5xxl_fp8_e4m3fn_scaled': 'comfyanonymous/flux_text_encoders',
-    'clip_vision_g': 'comfyanonymous/clip_vision_g',
-    
-    # === VAE ===
-    'ae': 'Comfy-Org/Lumina_Image_2.0_Repackaged',
-    'vae-ft-mse-840000-ema-pruned': 'stabilityai/sd-vae-ft-mse',
-    
-    # === SUPIR (超分辨率) ===
-    'SUPIR-v0F': 'Kijai/SUPIR_pruned',
-    'SUPIR-v0F_fp16': 'Kijai/SUPIR_pruned',
-    'SUPIR-v0Q': 'Kijai/SUPIR_pruned',
-    'SUPIR-v0Q_fp16': 'Kijai/SUPIR_pruned',
-    
-    # === AuraFlow ===
-    'aura_flow_0.2': 'fal/AuraFlow-v0.2',
-    'aura_flow_0.3': 'fal/AuraFlow-v0.3',
-    
-    # === LTX-Video 系列 ===
-    'ltx-video-2b-v0.9': 'Lightricks/LTX-Video',
-    'ltx-2-19b-distilled': 'Lightricks/LTX-Video-0.9.7',
-    'ltx-2-19b-distilled-fp8': 'Lightricks/LTX-Video-0.9.7',
-    
-    # === Mochi (视频模型) ===
-    'mochi_preview_fp8_scaled': 'genmo/mochi-1-preview',
-    'mochi_preview': 'genmo/mochi-1-preview',
-    
-    # === SVD (Stable Video Diffusion) ===
-    'svd': 'stabilityai/stable-video-diffusion-img2vid',
-    'svd_xt': 'stabilityai/stable-video-diffusion-img2vid-xt',
-    'svd_xt_1_1': 'stabilityai/stable-video-diffusion-img2vid-xt-1-1',
-    
-    # === Audio 模型 ===
-    'stable-audio-open-1_0': 'stabilityai/stable-audio-open-1.0',
-    'ace_step_v1_3.5b': 'ACE-Step/ACE-Step-v1-3.5B',
-    
-    # === ControlNet ===
-    'sd3.5_large_controlnet_canny': 'stabilityai/stable-diffusion-3.5-controlnets',
-    'sd3.5_large_controlnet_depth': 'stabilityai/stable-diffusion-3.5-controlnets',
-    'sd3.5_large_controlnet_blur': 'stabilityai/stable-diffusion-3.5-controlnets',
-    
-    # === 加速 LoRA (Hyper/LCM/TCD/Lightning) ===
-    # SD1.5 加速
-    'Hyper-SD15-8steps-lora': 'ByteDance/Hyper-SD',
-    'LCM_LoRA_SDv15': 'latent-consistency/lcm-lora-sdv1-5',
-    'TCD-SD15-LoRA': 'h1t/TCD-SD15-LoRA',
-    # SDXL 加速
-    'Hyper-SDXL-8steps-lora': 'ByteDance/Hyper-SD',
-    'Hyper-SDXL-8steps-lora_rank1': 'ByteDance/Hyper-SD',
-    'LCM_LoRA_Weights_SDXL': 'latent-consistency/lcm-lora-sdxl',
-    'TCD-SDXL-LoRA': 'h1t/TCD-SDXL-LoRA',
-    'sdxl_lightning_2step_lora': 'ByteDance/SDXL-Lightning',
-    'sdxl_lightning_4step_lora': 'ByteDance/SDXL-Lightning',
-    'sdxl_lightning_8step_lora': 'ByteDance/SDXL-Lightning',
-    # Flux 加速
-    'FLUX.1-Turbo-Alpha': 'alimama-creative/FLUX.1-Turbo-Alpha',
-    'FLUX.1-Turbo-Alpha-LoRA-8-Step_v1': 'alimama-creative/FLUX.1-Turbo-Alpha',
-    
-    # === 其他热门模型 ===
-    'dreamshaper_8': 'Lykon/DreamShaper',
-    'realvisxl_v5.0': 'SG161222/RealVisXL_V5.0',
-    'juggernaut_xl': 'RunDiffusion/Juggernaut-XL-v9',
+})
 
-    # === Wan 2.1 (Comfy-Org) ===
-    'wan2.1_t2v_1.3b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
-    'wan2.1_t2v_1.3b_fp16': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
-    'wan2.1_i2v_480p_14b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
-    'wan2.1_i2v_720p_14b': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
-    
-    # === Wan 2.1 (Kijai/Community Variants) ===
-    'wanvideo_comfy': 'Kijai/WanVideo_comfy',
-    'wan21_i2v_14b': 'Kijai/WanVideo_comfy',
-    'wan21_t2v_14b': 'Kijai/WanVideo_comfy',
-    'wan21_i2v_14b_lightx2v': 'Kijai/WanVideo_comfy',
-    'wan21_t2v_14b_lightx2v': 'Kijai/WanVideo_comfy',
-    'wan2.1-14b': 'Kijai/WanVideo_comfy',
-    'wan2_1-infinitetalk': 'Kijai/WanVideo_comfy',
-    'wan_2.1_vae': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
-    'umt5_xxl_fp8_e4m3fn_scaled': 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+# 6. 变体后缀
+VARIANT_SUFFIXES = set(_DATA.get('variant_suffixes', {
+    'q4', 'q5', 'q8', 'bf16', 'fp16', 'fp8', 'gguf', 'safetensors',
+    'pruned', 'ema', 'lightning', 'turbo',
+    'inpainting', 'depth', 'canny',
+}))
 
-    # === Z-Image (Turbo Art) ===
-    'z_image_turbo_art': 'wikeeyang/Z-Image-Turbo-Art',
-    'z_image_turbo_art_bf16': 'wikeeyang/Z-Image-Turbo-Art',
-    'z_image_turbo_bf16': 'wikeeyang/Z-Image-Turbo', # Distinguish from Art
-}
-
-# 变体后缀：需要被“剥离”以提取核心模型名的术语
-# 包括量化 (Q4_K, bf16), 格式 (gguf, safetensors), 以及功能变体 (lightning, inpainting)
-VARIANT_SUFFIXES = {
-    # Quantization
-    'q4', 'q5', 'q8', 'q6', 'q3', 'k', 'm', 's', 'km', 'ks', 'kp',
-    'q4_0', 'q4_1', 'q5_0', 'q5_1', 'q8_0', 'q4_k', 'q4_k_m', 'q4_k_s', 
-    'bf16', 'fp16', 'fp32', 'fp8', 'int8', 'int4',
-    # Format
-    'gguf', 'safetensors', 'ckpt', 'pt', 'bin', 'pth', 'onnx',
-    # Training
-    'pruned', 'ema', 'emaonly', 'full',
-    # Speed/Type
-    'lightning', 'turbo', 'hyper', 'lcm', 'simpo',
-    'inpainting', 'depth', 'canny', 'openpose',
-}
-
-# 核心功能词保护列表（如果这些词在一边有而另一边没有，则视为不同模型）
-# 注意：只保留真正关键的功能差异词，避免过度严格
-CRITICAL_TERMS = {
-    # 模型类型（必须严格区分，不同类型模型不能互相匹配）
-    'vae',  # VAE 编码器/解码器，不能与主扩散模型混淆
-    'lora',  # LoRA 不能与主模型混淆
-    # 功能变体（必须严格区分）
-    'upscale', 'upscaler', 'refiner', 'detailer',
-    'inpainting', 'inpaint',
-    # 加速 LoRA 关键词（Lightning/Turbo/LCM 等是特殊变体，不能与原始模型混淆）
+# 7. 核心功能词保护列表
+CRITICAL_TERMS = set(_DATA.get('critical_terms', {
+    'vae', 'lora', 'upscale', 'refiner', 'inpainting',
     'lightning', 'turbo', 'lcm', 'hyper',
-    '4steps', '8steps', '2steps', '1step',
-    # ControlNet 类型（必须严格区分）
-    'depth', 'canny', 'openpose', 'softedge', 'scribble', 'hed', 'mlsd', 'normalbae', 'seg', 'lineart',
-}
+    'depth', 'canny', 'openpose',
+}))
 
 class AdvancedTokenizer:
     """
@@ -331,9 +196,26 @@ class AdvancedTokenizer:
     @staticmethod
     def lookup_popular_model(filename):
         """
-        查找 ComfyUI 主流模型，如果匹配则返回 HuggingFace 仓库 ID
+        查找 ComfyUI 主流模型 (Phase 2: DB First, Fallback to Dict)
         返回: (repo_id, matched_key) 或 (None, None)
         """
+        # 1. 尝试查询数据库 (Phase 2 Upgrade)
+        try:
+            from .database import db
+            result = db.search_by_filename(filename)
+            if result:
+                name, _, _, description = result
+                # 从 description 解析 repo_id ("Repo: user/repo")
+                if description and "Repo: " in description:
+                    repo_id = description.split("Repo: ")[1].strip()
+                    return (repo_id, name)
+        except ImportError:
+            pass # 可能在独立脚本中运行，无法导入
+        except Exception as e:
+            print(f"[ModelMatcher] DB Lookup Error: {e}")
+
+        # 2. 回退到旧的字典匹配 (用于兼容性或 DB 未覆盖的情况)
+        
         # 提取基础名（无扩展名，无路径）
         base_name = os.path.basename(filename)
         # 移除常见扩展名
