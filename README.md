@@ -1,8 +1,7 @@
 # ComfyUI-LK-Model_Auto-Matching
 
 ![GitHub last commit](https://img.shields.io/github/last-commit/hdzwzqbxlk/ComfyUI-LK-Model_Auto-Matching)
-![GitHub license](https://img.shields.io/github/license/hdzwzqbxlk/ComfyUI-LK-Model_Auto-Matching)
-![Version](https://img.shields.io/badge/version-3.0.1-blue)
+![Version](https://img.shields.io/badge/version-3.0.3-blue)
 
 **[English](#english) | [中文说明](#chinese)**
 

@@ -56,6 +56,16 @@ MODEL_ALIASES = {
     'realvis': 'realvisxl',
     'jugg': 'juggernaut',
     'qwen': 'qwen',
+    # New Model Families
+    'wan': 'wan video',
+    'z_image': 'z-image',
+    'hunyuan': 'hunyuan video',
+    'mochi': 'mochi 1',
+    'lumina': 'lumina image 2.0',
+    'kolors': 'kolors',
+    'auraflow': 'auraflow',
+    'cosmos': 'nvidia cosmos',
+    'ltx': 'ltx video',
 }
 
 # ============================================================

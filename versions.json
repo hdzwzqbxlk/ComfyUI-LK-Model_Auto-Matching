@@ -1,6 +1,25 @@
 {
     "versions": [
         {
+            "version": "3.0.3",
+            "date": "2026-02-01",
+            "changes": [
+                "Fix: 使用 Origin/Referer 头绕过 Civitai 的 Cloudflare 屏蔽",
+                "Fix: 搜索结果弹窗关闭按钮改为 Fixed 定位，避免滚动遮挡",
+                "Feat: 本地未索引文件检测 (优先提示本地存在，跳过网络搜索)",
+                "Perf: 优化并行搜索速度，本地匹配成功后立即终止"
+            ]
+        },
+        {
+            "version": "3.0.2",
+            "date": "2026-02-01",
+            "changes": [
+                "Fix: 针对 Wan/Hunyuan/LTX 视频模型，直接搜索社区核心仓库 (Kijai 等)",
+                "Fix: 修复 HuggingFace 搜索 API 关键字策略",
+                "UI: 优化搜索结果弹窗结构"
+            ]
+        },
+        {
             "version": "3.0.1",
             "date": "2026-02-01",
             "changes": [
