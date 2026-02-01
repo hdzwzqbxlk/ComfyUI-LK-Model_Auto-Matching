@@ -58,6 +58,25 @@ class CivitaiHashProvider(BaseProvider):
         return sha256.hexdigest()
     
     async def search_by_hash(self, file_path: str, original_filename: str):
+        """Search Civitai by SHA256"""
+        if getattr(self, "circuit_open", False):
+            print(f"[CivitaiProvider] Circuit Open (Blocking skipped)")
+            await asyncio.sleep(0) # Yield
+            return None
+
+        # Calculate Hash (Async)
+        # ...
+        
+        try:
+            # ... request ...
+            pass
+        except Exception as e:
+            if "403" in str(e):
+                self.error_count = getattr(self, "error_count", 0) + 1
+                if self.error_count >= 3:
+                    self.circuit_open = True
+                    print(f"[CivitaiProvider] 403 limit reached. Disabling Civitai for this session.")
+            return None
         """
         通过文件哈希精确匹配 Civitai 模型
         
