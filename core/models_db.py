@@ -3300,7 +3300,8 @@ def find_best_match_in_db(filename: str) -> tuple:
                     "path": map_path,
                     "filename": os.path.basename(map_path),
                     "url": f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{map_path}",
-                    "pageUrl": "https://huggingface.co/Kijai/WanVideo_comfy"
+                    "pageUrl": "https://huggingface.co/Kijai/WanVideo_comfy",
+                    "source": "Civitai-Alias"  # [Fix] v3.5.1
                 }, 0.99)
 
     # 3. RapidFuzz 模糊匹配 (针对 3000+ 文件)
@@ -3325,8 +3326,15 @@ def find_best_match_in_db(filename: str) -> tuple:
     return (None, 0)
 
 def _enrich_info(info):
-    """添加 URL 字段"""
+    """添加 URL 和 source 字段 [v3.5.1 Fix]"""
     new_info = info.copy()
     new_info["url"] = f"https://huggingface.co/{info['repo_id']}/resolve/main/{info['path']}"
     new_info["pageUrl"] = f"https://huggingface.co/{info['repo_id']}/tree/main"
+    # [v3.5.1] Add source field based on repo_id
+    if "Kijai" in info['repo_id']:
+        new_info["source"] = "Kijai"
+    elif "Comfy-Org" in info['repo_id']:
+        new_info["source"] = "Comfy-Org"
+    else:
+        new_info["source"] = info['repo_id'].split('/')[0] if '/' in info['repo_id'] else "Unknown"
     return new_info
