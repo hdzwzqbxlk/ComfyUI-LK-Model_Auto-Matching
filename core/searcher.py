@@ -23,7 +23,8 @@ class BaseProvider:
         # Update to newer impersonation to avoid blocking
         # curl_cffi supports chrome124 in newer versions, or verify installed version
         self.impersonate = "chrome124"
-        self.timeout = 5  # [v3.3.1] 给 Google 更多时间
+        # [v3.5.2] Read timeout from config, default to 20s for better stability
+        self.timeout = self.config.get("network", {}).get("timeout", 20)
 
     def _get_headers(self, referer=None):
         # curl_cffi handles User-Agent natively via 'impersonate', 
@@ -425,18 +426,10 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         results = []
         
         try:
-            # 1. 优先查询全量数据库 (Exact + Civitai Map + Fuzzy) => < 1ms
-            db_match, score = find_best_match_in_db(original_filename)
-            if db_match and score >= 0.85:
-                print(f"[BestMatch] Database hit: {db_match['filename']} (score: {score:.2f})")
-                return [{
-                    "source": f"HuggingFace ({db_match['source']} DB)",
-                    "name": db_match["repo_id"],
-                    "filename": db_match["filename"],
-                    "url": db_match["url"],
-                    "pageUrl": db_match["pageUrl"],
-                    "score": score
-                }]
+            # [v3.5.1] DB lookups are now handled centrally in ModelSearcher.search
+            # to allow cross-provider resolution (ModelScope priority).
+            # No longer doing early return here.
+            pass
             
             # 2. 提取加权关键词
             keywords = self._extract_keywords(original_filename)
@@ -939,7 +932,8 @@ class GoogleOmniProvider(BaseProvider):
         results = []
         try:
             # 使用域名作为关键词，不使用 site: 语法 (容易触发率限制)
-            sites_or_keywords = "liblib OR shakker OR civitai OR huggingface OR modelscope"
+            # [v3.5.2] Add cnb.cool
+            sites_or_keywords = "liblib OR shakker OR civitai OR huggingface OR modelscope OR cnb.cool"
             full_query = f"{query} ({sites_or_keywords})"
             
             print(f"[GoogleOmni] Searching: {full_query}")
@@ -1025,6 +1019,9 @@ class GoogleOmniProvider(BaseProvider):
         elif "shakker.ai" in url:
             source = "Shakker (Google)"
             name = "Shakker Model"
+        elif "cnb.cool" in url:
+            source = "CNB (Google)"
+            name = "CNB Model"
         else:
             return None
 
@@ -1118,7 +1115,7 @@ class DuckDuckGoProvider(BaseProvider):
         results = []
         try:
             # 使用域名作为关键词，不使用 site: 语法 (DDG 对 site: 支持不稳定)
-            sites = "liblib OR shakker OR civitai OR huggingface OR modelscope"
+            sites = "liblib OR shakker OR civitai OR huggingface OR modelscope OR cnb.cool"
             full_query = f"{query} ({sites})"
             
             print(f"[DuckDuckGo] Searching: {full_query}")
@@ -1176,6 +1173,9 @@ class DuckDuckGoProvider(BaseProvider):
             if "blob" in url_lower and not any(ext in url_lower for ext in [".safetensors", ".gguf", ".pt", ".pth", ".bin", ".onnx"]): return None
             source = "HuggingFace (DDG)"
             # Fix: Extract full repo "user/repo" not just "user"
+        elif "cnb.cool" in url_lower:
+            source = "CNB (DDG)"
+            name = "CNB Model" 
             # url_lower: https://huggingface.co/FX-FeiHou/wan2.2-Remix/...
             parts = url_lower.split("huggingface.co/")[-1].split("/")
             if len(parts) >= 2:
@@ -1188,18 +1188,84 @@ class DuckDuckGoProvider(BaseProvider):
             source = "Liblib (DDG)"; name = "Liblib Model"
         elif "shakker.ai" in url_lower:
             source = "Shakker (DDG)"; name = "Shakker Model"
+            source = "Shakker (DDG)"; name = "Shakker Model"; platform = "Shakker"
         else: return None
 
         score = AdvancedTokenizer.calculate_similarity(original_lower, urllib.parse.unquote(url_lower))
         
         return {
-            "source": source,
-            "name": name,
+            "source": f"DuckDuckGo ({platform})",
+            "name": urllib.parse.unquote(url).split('/')[-1] if '/' in url else url,
             "filename": "Direct Link (Click to Visit)",
             "url": urllib.parse.unquote(url),
             "pageUrl": urllib.parse.unquote(url),
             "score": score
         }
+
+class CNBProvider(BaseProvider):
+    """
+    [v3.5.1] CNB (cnb.cool) Provider - Scrapes repositories from CNB ai-models group.
+    CNB is a high-speed Git platform in China.
+    """
+    def __init__(self, config):
+        super().__init__(config)
+        self.search_url = "https://cnb.cool/ai-models/-/repos"
+
+    async def search(self, query, original_filename):
+        headers = self._get_headers("https://cnb.cool")
+        results = []
+        
+        
+        # [v3.5.2] CNB uses 'name' for repository search
+        params = {"name": query}
+        
+        try:
+            async with AsyncSession(impersonate="chrome124", headers=headers, timeout=15) as session:
+                resp = await session.get(self.search_url, params=params)
+                if resp.status_code == 200:
+                    selector = Selector(text=resp.text)
+                    # Repository links on CNB search page
+                    # Format: <a href="/ai-models/username/repo">...</a>
+                    repo_links = selector.xpath('//a[contains(@href, "/ai-models/")]/@href').getall()
+                    
+                    seen_repos = set()
+                    for link in repo_links:
+                        # Clean link: /ai-models/author/repo-name
+                        # Link might be like: /ai-models/black-forest-labs/FLUX.1-schnell
+                        parts = [p for p in link.split('/') if p and p != '-' and not p.startswith('?')]
+                        # Parts: ['ai-models', 'author', 'repo']
+                        if len(parts) >= 3 and parts[0] == 'ai-models':
+                            author = parts[1]
+                            repo = parts[2]
+                            repo_id = f"{author}/{repo}"
+                            if repo_id in seen_repos: continue
+                            
+                            # [v3.5.2] Relevance Check: CNB search is fuzzy, so verify keyword match
+                            # Split query into terms (e.g. "wan 2.1" -> ["wan", "2.1"])
+                            query_terms = [t.lower() for t in query.split('_') if len(t) > 1]
+                            if not query_terms: query_terms = [query.lower()]
+                            
+                            repo_lower = repo_id.lower()
+                            # Check if at least one major term is in the repo name
+                            if not any(term in repo_lower for term in query_terms):
+                                continue
+
+                            seen_repos.add(repo_id)
+                            
+                            results.append({
+                                "source": "CNB",
+                                "name": repo_id,
+                                "filename": original_filename,
+                                "url": f"https://cnb.cool/ai-models/{repo_id}",
+                                "pageUrl": f"https://cnb.cool/ai-models/{repo_id}",
+                                "score": 0.85 
+                            })
+                            if len(results) >= 5: break
+                            
+        except Exception as e:
+            print(f"[CNBProvider] Error: {e}")
+            
+        return results
 
 class ModelSearcher:
     def __init__(self):
@@ -1220,10 +1286,10 @@ class ModelSearcher:
             HuggingFaceProvider(self.config),
             LiblibProvider(self.config),
             ModelScopeFileSearchProvider(self.config),   # [v3.5.0] ModelScope Direct File Search
+            CNBProvider(self.config), # [v3.5.2] CNB Provider
             GoogleOmniProvider(self.config),
             DuckDuckGoProvider(self.config)
         ]
-
 
 
     def load_config(self):
@@ -1290,20 +1356,45 @@ class ModelSearcher:
             except Exception as e:
                 print(f"[AutoMatch] Hash search failed: {e}")
 
+        # [v3.5.1] Step 1: Normalize filename via Local DB & Popular Aliases
+        # Instead of returning immediately, we use this for cross-provider resolution.
+        normalized_filename = filename
+        db_fallback_result = None
+        
+        # 1a. Popular Model Lookup (e.g. Wan2.1, Flux)
         repo_id, matched_key = AdvancedTokenizer.lookup_popular_model(filename)
         if repo_id:
-            res = {
+            normalized_filename = matched_key if matched_key.endswith(('.safetensors', '.gguf')) else filename
+            db_fallback_result = {
                 "url": f"https://huggingface.co/{repo_id}/tree/main",
                 "source": "HuggingFace (Official)",
                 "name": repo_id,
                 "pageUrl": f"https://huggingface.co/{repo_id}",
                 "score": 1.0
             }
-            self.search_cache[filename] = res
-            return res
 
-        search_terms = AdvancedTokenizer.extract_search_terms(filename)
-        base_name = os.path.splitext(os.path.basename(filename))[0]
+        # 1b. Database Match (if no popular hit or as refinement)
+        if not db_fallback_result:
+            db_match, score = find_best_match_in_db(filename)
+            if db_match and score >= 0.85:
+                normalized_filename = db_match["filename"]
+                db_fallback_result = {
+                    "source": f"HuggingFace ({db_match['source']} DB)",
+                    "name": db_match["repo_id"],
+                    "filename": db_match["filename"],
+                    "url": db_match["url"],
+                    "pageUrl": db_match["pageUrl"],
+                    "score": score
+                }
+
+        search_terms = AdvancedTokenizer.extract_search_terms(normalized_filename)
+        # Add original filename terms as fallback if normalized is different
+        if normalized_filename != filename:
+            orig_terms = AdvancedTokenizer.extract_search_terms(filename)
+            for t in orig_terms:
+                if t not in search_terms: search_terms.append(t)
+        
+        base_name = os.path.splitext(os.path.basename(normalized_filename))[0]
         
         # [v3.3.2] 方案 D: Provider 智能路由
         # 根据文件名特征选择优先 Provider
@@ -1312,23 +1403,23 @@ class ModelSearcher:
         is_flux_wan_qwen = bool(re_module.search(r'(flux|wan|qwen|ltx|z[-_]?image)', base_name, re_module.IGNORECASE))
         
         if has_chinese:
-            # 中文模型 -> 优先 Liblib/ModelScope
+            # 中文模型 -> 优先 Liblib/ModelScope/CNB
             priority_providers = [
                 p for p in self.providers 
-                if any(name in type(p).__name__.lower() for name in ['liblib', 'modelscope', 'google', 'duckduck'])
+                if any(name in type(p).__name__.lower() for name in ['liblib', 'modelscope', 'cnb', 'google', 'duckduck'])
             ]
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers
-            print(f"[AutoMatch] 中文模型 -> 优先 Liblib/ModelScope")
+            print(f"[AutoMatch] 中文模型 -> 优先 Liblib/ModelScope/CNB")
         elif bool(re_module.search(r'(wan|qwen)', base_name, re_module.IGNORECASE)):
-            # [v3.5.0] Wan/Qwen (国产优选) -> 优先 ModelScope
+            # [v3.5.0] Wan/Qwen (国产优选) -> 优先 ModelScope/CNB
             priority_providers = [
                 p for p in self.providers 
-                if 'modelscope' in type(p).__name__.lower()
+                if any(name in type(p).__name__.lower() for name in ['modelscope', 'cnb'])
             ]
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers
-            print(f"[AutoMatch] Wan/Qwen (国产) -> 优先 ModelScope")
+            print(f"[AutoMatch] Wan/Qwen (国产) -> 优先 ModelScope/CNB")
         elif bool(re_module.search(r'(flux|ltx|z[-_]?image)', base_name, re_module.IGNORECASE)):
             # GRAVITY-NOTE: Flux 等国际模型 -> 优先 HuggingFace
             priority_providers = [
@@ -1387,10 +1478,17 @@ class ModelSearcher:
                 
         best_match = unique_candidates[0] if unique_candidates else None
         
+        # [v3.5.1] If no high-score hit found online, check if we have a DB fallback
+        if not best_match or best_match.get("score", 0) < 0.85:
+            if db_fallback_result:
+                print(f"[AutoMatch] Returning DB fallback: {db_fallback_result['name']}")
+                best_match = db_fallback_result
+
         if best_match:
-            print(f"[AutoMatch] Match Found: {best_match['name']} ({best_match['source']}) Score: {best_match['score']:.2f}")
+            print(f"[AutoMatch] Match Found: {best_match['name']} ({best_match['source']}) Score: {best_match.get('score', 0):.2f}")
+            self.search_cache[filename] = best_match
+            return [best_match]
         else:
             print(f"[AutoMatch] No match for: {filename}")
-            
-        self.search_cache[filename] = best_match
-        return best_match
+            self.search_cache[filename] = None
+            return []

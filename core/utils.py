@@ -134,11 +134,6 @@ COMFYUI_POPULAR_MODELS = _DATA.get('popular_models', {
     'lightx2v': 'Kijai/WanVideo_comfy',
     'moviigen': 'Kijai/WanVideo_comfy',
     
-    # aniWan 别名 (Civitai 风格命名)
-    'aniwan': 'Kijai/WanVideo_comfy',
-    'aniwan21': 'Kijai/WanVideo_comfy',
-    'aniwan2114b': 'Kijai/WanVideo_comfy',
-    
     # 基础 Wan 模型
     'wan2.1-i2v-14b': 'Kijai/WanVideo_comfy',
     'wan2.1-t2v-14b': 'Kijai/WanVideo_comfy',
@@ -441,6 +436,13 @@ class AdvancedTokenizer:
                 i += 1
                 continue
             
+            # [v3.5.2] Preserve variant features like 'ani', 'anime', 'style'
+            high_priority_features = {'ani', 'anime', 'style', 'real', 'toon'}
+            if part in high_priority_features:
+                filtered.append(part)
+                i += 1
+                continue
+            
             # 检查是否是保护词
             if part in protected:
                 filtered.append(part)
@@ -547,6 +549,29 @@ class AdvancedTokenizer:
              raw_search = raw_stem
              
         search_terms.append(raw_search)
+        
+        # [v3.5.2] Phase 0.5: 智能分词优先 (Smart Tokenization)
+        # 解决 CamelCase 连写问题 (e.g. "aniWan" -> "ani wan")
+        # 如果分词后的结果与原始文件名差异显著，则作为首选
+        try:
+            smart_tokens = AdvancedTokenizer.tokenize(base_name)
+            if smart_tokens:
+                smart_stem = ' '.join(smart_tokens)
+                # 如果分词结果比原始词更通用（长度增加了因为加了空格，或者 token 数变多）
+                if smart_stem.replace(' ', '') == raw_stem.replace('_', '').replace('-', '').lower() or \
+                   len(smart_tokens) > len(unique_parts):
+                    if smart_stem.lower() != raw_search.lower():
+                        # 插入到最前面
+                        search_terms.insert(0, smart_stem)
+                        
+                        # [v3.5.2] Add Short Smart Term (First 3 tokens) for better Hit Rate
+                        # Avoid timeouts with long queries
+                        if len(smart_tokens) > 3:
+                            short_smart = ' '.join(smart_tokens[:3])
+                            if short_smart.lower() != smart_stem.lower() and len(short_smart) > 3:
+                                search_terms.insert(0, short_smart)
+        except Exception as e:
+            print(f"[Tokenizer] Smart split error: {e}")
 
         # === 特殊处理：GGUF 文件 ===
         # GGUF 仓库命名规则：通常是 "模型名-GGUF"，如 "Qwen-Image-Edit-2511-GGUF"

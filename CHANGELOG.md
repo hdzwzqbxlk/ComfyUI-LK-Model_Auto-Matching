@@ -1,6 +1,18 @@
 # Changelog
 
-## [3.4.2] - 2026-02-02
+## [3.5.2] - 2026-02-02
+### Added
+- **CNB.cool Integration**: Full support for CNB model search with optimized name matching and relevance checks.
+- **Smart Tokenizer**: Enhanced handling for non-standard naming (e.g., `aniWan` -> `ani wan`).
+- **Short Smart Term Strategy**: Prioritizes short, tokenized terms to avoid timeout issues with long filenames.
+- **Network Stabilization**: Global timeout configuration (20s) in `BaseProvider` to prevent premature failures on slow connections.
+- **Verification Suite**: Added `scripts/final_system_verify.py` for full system integrity validation.
+
+### Fixed
+- Fixed `KeyError: 0` in verification scripts when no results are found.
+- Fixed `curl` resolution timeouts by correctly propagating network config.
+- Fixed `CNBProvider` repo ID variable scope issue.
+
 ### Added
 - **Smart Weighted Tokenizer**: Implemented intelligent filename parsing that correctly handles:
     - Version numbers (e.g., `Wan2.1` -> `Wan`, `2.1`).

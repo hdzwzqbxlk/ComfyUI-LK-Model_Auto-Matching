@@ -8,12 +8,6 @@ import os
 
 # Civitai 风格命名映射 (手动维护)
 CIVITAI_MAP = {
-    # aniWan 系列
-    "aniwan2114bfp8e4m3fn_i2v480pnew": "Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors",
-    "aniwan2114bfp8e4m3fn": "Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors",
-    "aniwan21t2v14b": "Wan2_1-T2V-14B_fp8_e4m3fn.safetensors",
-    "aniwani2v14b": "Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors",
-    
     # rCM LoRA
     "wan_2_1_t2v_14b_rcm_lora_average_rank_83": "LoRAs/rCM/Wan_2_1_T2V_14B_480p_rCM_lora_average_rank_83_bf16.safetensors",
     "wan_2_1_t2v_14b_rcm_lora_average_rank_148": "LoRAs/rCM/Wan_2_1_T2V_14B_480p_rCM_lora_average_rank_148_bf16.safetensors",

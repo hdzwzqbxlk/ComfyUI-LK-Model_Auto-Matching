@@ -33,6 +33,9 @@ async def run_verification():
         "search": {
             "use_cache": False,
             "max_results": 5
+        },
+        "network": {
+            "timeout": 20
         }
     }
     
@@ -61,11 +64,10 @@ async def run_verification():
             "expected_source": "ModelScope", # Should try, even if fail
             "optional": True # Might not find anything, but log check is key
         },
-        # 4. Complex Civitai Name -> Aliased to Local DB
         {
-            "name": "Civitai Complex Name",
+            "name": "Civitai Complex Name (Wan Priority)",
             "filename": "aniWan2114BFp8E4m3fn_i2v480pNew.safetensors",
-            "expected_source": ["Local Database", "Civitai (DB Alias)", "Civitai"],
+            "expected_source": "ModelScope",
             "min_score": 0.8
         }
     ]
@@ -85,7 +87,7 @@ async def run_verification():
                 continue
                 
             top_result = results[0]
-            print(f"    🏆  Top Result: {top_result['filename']}")
+            print(f"    🏆  Top Result: {top_result['name']}")
             print(f"        Source: {top_result['source']}")
             print(f"        URL: {top_result['url']}")
             

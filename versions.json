@@ -1,6 +1,16 @@
 {
     "versions": [
         {
+            "version": "3.5.2",
+            "date": "2026-02-02",
+            "changes": [
+                "Feat: CNB.cool Provider Integration - 国产模型源深度支持",
+                "Feat: Smart Tokenizer - 智能分词处理 (aniWan -> ani wan)",
+                "Fix: Network Stabilization - 全局 20s 超时配置，网络更稳定",
+                "Fix: Verification Suite - 修复验证脚本 KeyError 问题"
+            ]
+        },
+        {
             "version": "3.5.1",
             "date": "2026-02-02",
             "changes": [
