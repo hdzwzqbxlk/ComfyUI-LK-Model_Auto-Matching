@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.4.2" # 深度算法优化: 智能分词 + 加权匹配 + 动态仓库发现
+__version__ = "3.5.1" # ModelScope深度集成 + 智能Provider路由 + BestMatch修复
 __author__ = "LK"
 
 # 初始化核心组件
