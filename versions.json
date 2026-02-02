@@ -1,6 +1,17 @@
 {
     "versions": [
         {
+            "version": "3.5.1",
+            "date": "2026-02-02",
+            "changes": [
+                "Major: ModelScope 深度集成 - 逆向工程文件列表 API + 国内 CDN 直链",
+                "Feat: 智能 Provider 路由 - Wan/Qwen 优先 ModelScope，Flux 优先 HuggingFace",
+                "Feat: Civitai 复杂命名归一化 (aniWan21 -> Wan 2.1)",
+                "Fix: 修复 BestMatch 返回结果缺少 source 字段导致 0 结果问题",
+                "Perf: Chrome124 深度指纹伪装 + 分支自动退避 (master/main)"
+            ]
+        },
+        {
             "version": "3.1.0",
             "date": "2026-02-01",
             "changes": [
