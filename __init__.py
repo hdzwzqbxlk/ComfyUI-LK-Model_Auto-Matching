@@ -92,11 +92,11 @@ async def search_models(request):
         search_results = await asyncio.gather(*tasks)
         
         results = []
-        for filename, result in zip(original_filenames, search_results):
-            if result:
+        for filename, result_list in zip(original_filenames, search_results):
+            if result_list and isinstance(result_list, list) and len(result_list) > 0:
                 results.append({
                     "original": filename,
-                    "result": result
+                    "result": result_list[0] # Unwrap list to get the best match object
                 })
         
         return web.json_response({"downloads": results})
