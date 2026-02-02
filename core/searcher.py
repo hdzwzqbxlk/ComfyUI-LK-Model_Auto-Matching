@@ -1188,13 +1188,12 @@ class DuckDuckGoProvider(BaseProvider):
             source = "Liblib (DDG)"; name = "Liblib Model"
         elif "shakker.ai" in url_lower:
             source = "Shakker (DDG)"; name = "Shakker Model"
-            source = "Shakker (DDG)"; name = "Shakker Model"; platform = "Shakker"
         else: return None
 
         score = AdvancedTokenizer.calculate_similarity(original_lower, urllib.parse.unquote(url_lower))
         
         return {
-            "source": f"DuckDuckGo ({platform})",
+            "source": source,
             "name": urllib.parse.unquote(url).split('/')[-1] if '/' in url else url,
             "filename": "Direct Link (Click to Visit)",
             "url": urllib.parse.unquote(url),

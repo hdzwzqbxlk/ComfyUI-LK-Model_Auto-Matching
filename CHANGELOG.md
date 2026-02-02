@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.5.3] - 2026-02-02
+### Fixed
+- **DuckDuckGo Provider**: Fixed critical `UnboundLocalError` caused by incorrect variable scope for `platform`.
+- **Frontend Stability**: Added safety checks in `auto_matcher.js` to prevent crashes when search results miss the `source` field.
+- **Shakker Parsing**: Improved URL parsing for Shakker models in general search results.
+
 ## [3.5.2] - 2026-02-02
 ### Added
 - **CNB.cool Integration**: Full support for CNB model search with optimized name matching and relevance checks.

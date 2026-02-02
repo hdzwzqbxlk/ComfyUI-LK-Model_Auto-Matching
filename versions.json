@@ -1,6 +1,15 @@
 {
     "versions": [
         {
+            "version": "3.5.3",
+            "date": "2026-02-02",
+            "changes": [
+                "Fix: DuckDuckGo Provider Crash - 修复变量作用域导致的 UnboundLocalError",
+                "Fix: Frontend Safety - 修复搜索结果不完整导致的前端白屏崩溃",
+                "Fix: Shakker Support - 优化 Shakker 链接解析逻辑"
+            ]
+        },
+        {
             "version": "3.5.2",
             "date": "2026-02-02",
             "changes": [

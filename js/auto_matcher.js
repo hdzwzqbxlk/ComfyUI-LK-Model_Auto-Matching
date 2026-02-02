@@ -832,7 +832,7 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
                                 transition: all 0.2s;
                                 border: none;
                                 box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                            " onmouseover="this.style.background='#1e88e5';this.style.transform='translateY(-1px)'" onmouseout="this.style.background='#2196f3';this.style.transform='translateY(0)'">⬇️ 下载/Download (${d.result.source.split(' ')[0]})</a>
+                            " onmouseover="this.style.background='#1e88e5';this.style.transform='translateY(-1px)'" onmouseout="this.style.background='#2196f3';this.style.transform='translateY(0)'">⬇️ 下载/Download (${(d.result.source || 'Online').split(' ')[0]})</a>
                             
                             ${d.result.pageUrl ? `
                             <a href="${d.result.pageUrl}" target="_blank" style="

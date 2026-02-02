@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.5.2" # CNB Integration + Smart Tokenizer + Network Stabilizer
+__version__ = "3.5.3" # Bugfix: DuckDuckGo Crash & Frontend Safety
 __author__ = "LK"
 
 # 初始化核心组件
