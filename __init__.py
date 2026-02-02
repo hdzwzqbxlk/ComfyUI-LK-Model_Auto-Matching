@@ -138,8 +138,10 @@ async def validate_config(request):
 async def get_config(request):
     try:
         config = searcher.get_config()
-        # Only return safe fields to frontend if needed, but for local tool it's fine
-        return web.json_response(config)
+        # Return version for frontend sync
+        response_data = config.copy() if config else {}
+        response_data["version"] = __version__
+        return web.json_response(response_data)
     except Exception as e:
         print(f"[AutoModelMatcher] Get Config Error: {e}")
         return web.json_response({"error": str(e)}, status=500)

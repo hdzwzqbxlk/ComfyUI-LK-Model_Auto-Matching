@@ -1,11 +1,22 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const VERSION = "v3.5.1";
+let PROJECT_VERSION = "3.5.4"; // Default fallback
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
     async setup() {
+        // [Sync] Fetch version from backend to ensure UI matches project
+        try {
+            const resp = await api.fetchApi("/auto-matcher/get-config");
+            const config = await resp.json();
+            if (config && config.version) {
+                PROJECT_VERSION = config.version;
+            }
+        } catch (e) {
+            console.warn("[AutoMatch] Failed to sync version:", e);
+        }
+
         // 创建悬浮条容器 (仿 BizyAir 风格)
         const floater = document.createElement("div");
         floater.id = "lk-automatch-floater";
@@ -81,7 +92,7 @@ app.registerExtension({
 
         // --- Logo / Title ---
         const titleSpan = document.createElement("span");
-        titleSpan.innerHTML = `<span style="color: #64b5f6; font-weight: 800;">LK</span> Auto Match <span style="color: #888; font-size: 11px;">v${VERSION}</span>`;
+        titleSpan.innerHTML = `<span style="color: #64b5f6; font-weight: 800;">LK</span> Auto Match <span style="color: #888; font-size: 11px;">v${PROJECT_VERSION}</span>`;
         titleSpan.style.fontSize = "14px";
         titleSpan.style.fontWeight = "600";
         titleSpan.style.marginRight = "8px";
