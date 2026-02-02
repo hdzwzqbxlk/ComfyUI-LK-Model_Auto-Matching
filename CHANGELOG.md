@@ -1,5 +1,9 @@
 # Changelog
 
+## [3.5.4] - 2026-02-02
+### Fixed
+- **Civitai Provider**: Fixed persistent `403 Forbidden` errors by removing manual `User-Agent` rotation that conflicted with `curl_cffi` TLS fingerprinting. System now uses native Chrome 124 attributes.
+
 ## [3.5.3] - 2026-02-02
 ### Fixed
 - **DuckDuckGo Provider**: Fixed critical `UnboundLocalError` caused by incorrect variable scope for `platform`.

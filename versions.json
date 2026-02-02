@@ -1,6 +1,14 @@
 {
     "versions": [
         {
+            "version": "3.5.4",
+            "date": "2026-02-02",
+            "changes": [
+                "Fix: Civitai 403 Forbidden - 移除冲突的 User-Agent 设置，修复反爬拦截",
+                "Fix: Civitai API - 优化请求头以匹配 Chrome 指纹"
+            ]
+        },
+        {
             "version": "3.5.3",
             "date": "2026-02-02",
             "changes": [

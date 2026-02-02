@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.5.3" # Bugfix: DuckDuckGo Crash & Frontend Safety
+__version__ = "3.5.4" # Bugfix: Civitai 403 Forbidden Fix
 __author__ = "LK"
 
 # 初始化核心组件

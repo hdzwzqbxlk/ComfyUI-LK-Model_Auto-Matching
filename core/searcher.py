@@ -27,20 +27,11 @@ class BaseProvider:
         self.timeout = self.config.get("network", {}).get("timeout", 20)
 
     def _get_headers(self, referer=None):
-        # curl_cffi handles User-Agent natively via 'impersonate', 
-        # BUT explicitly rotating specific User-Agents can help with 'deep camouflage'
-        import random
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0"
-        ]
-        
         headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br",
             "Accept-Language": "en-US,en;q=0.9",
-            "User-Agent": random.choice(user_agents),
+            # "User-Agent": ... -> REMOVED: Let curl_cffi handle UA to match TLS fingerprint
             "Connection": "keep-alive"
         }
         if referer:
