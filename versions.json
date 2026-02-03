@@ -1,6 +1,13 @@
 {
     "versions": [
         {
+            "version": "3.5.5",
+            "date": "2026-02-04",
+            "changes": [
+                "Fix: Path Separator - 修正模型路径分隔符在 Windows 下显示不正确的问题 ( / -> \\ )"
+            ]
+        },
+        {
             "version": "3.5.4",
             "date": "2026-02-02",
             "changes": [

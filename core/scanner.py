@@ -157,7 +157,7 @@ class ModelIndex:
                                     # But here we probably want the full relative path if it's in a subdir?
                                     # ComfyUI's get_filename_list returns "sub/model.safetensors"
                                     # Let's try to match that behavior.
-                                    "filename": os.path.relpath(full_path, root_path).replace("\\", "/"),
+                                    "filename": os.path.relpath(full_path, root_path),
                                     "size": stat.st_size,
                                     "mtime": stat.st_mtime
                                 }
