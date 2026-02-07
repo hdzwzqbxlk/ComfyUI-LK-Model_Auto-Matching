@@ -1,6 +1,13 @@
 # Changelog
+ 
+## [3.5.6] - 2026-02-07
+### Fixed
+- **Deep Path Normalization**: Added a final layer of path normalization in the Matcher to ensure all output paths (including those from legacy indices or hardcoded databases) use the correct system separator.
 
-## [3.5.4] - 2026-02-02
+## [3.5.5] - 2026-02-04
+### Fixed
+- **Path Separator**: Fixed incorrect path separator (using `/` instead of `\`) when displaying matched models in Windows environments.
+
 ### Fixed
 - **Civitai Provider**: Fixed persistent `403 Forbidden` errors by removing manual `User-Agent` rotation that conflicted with `curl_cffi` TLS fingerprinting. System now uses native Chrome 124 attributes.
 

@@ -152,8 +152,8 @@ class ModelMatcher:
                     "node_type": item["node_type"],
                     "widget_name": item["widget_name"],
                     "original_value": current_val,
-                    "matched_value": best_match["filename"],
-                    "path": best_match["path"],
+                    "matched_value": os.path.normpath(best_match["filename"]),
+                    "path": os.path.normpath(best_match["path"]),
                     "match_type": match_type
                 })
         
