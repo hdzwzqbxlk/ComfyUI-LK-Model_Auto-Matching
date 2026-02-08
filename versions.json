@@ -1,6 +1,15 @@
 {
     "versions": [
         {
+            "version": "3.5.7",
+            "date": "2026-02-08",
+            "changes": [
+                "Fix: Strict Type Enforcement - 严格校验模型类型 (Checkpoint != LoRA)，杜绝跨类型误匹配",
+                "Fix: UI Cleaner - 使用 MutationObserver 彻底清除残留的悬浮关闭按钮",
+                "Fix: Missing Type Info - 修复前端结果显示为 'UNKNOWN' 的问题"
+            ]
+        },
+        {
             "version": "3.5.6",
             "date": "2026-02-07",
             "changes": [

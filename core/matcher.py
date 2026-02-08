@@ -154,7 +154,8 @@ class ModelMatcher:
                     "original_value": current_val,
                     "matched_value": os.path.normpath(best_match["filename"]),
                     "path": os.path.normpath(best_match["path"]),
-                    "match_type": match_type
+                    "match_type": match_type,
+                    "type": best_match.get("type", "unknown")
                 })
         
         return matches
@@ -349,12 +350,14 @@ class ModelMatcher:
             if target_fmt != "other" and cand_fmt != "other" and target_fmt != cand_fmt:
                 format_multiplier = 0.0  # HARD ZERO
             
-            # 3. Type Bonuses
+            # 3. [Fix] Strict Type Enforcement
             type_score = 0.0
             cand_type = info.get("type", "unknown")
             if expected_types:
-                if cand_type in expected_types: type_score = 30.0
-                else: type_score = -50.0
+                if cand_type not in expected_types:
+                    continue  # Strict Skip
+                type_score = 30.0 # Bonus for consistency match
+
             
             final_score = (base_final + type_score) * format_multiplier
             

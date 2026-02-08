@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-let PROJECT_VERSION = "3.5.6"; // Default fallback
+let PROJECT_VERSION = "3.5.7"; // Default fallback
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
@@ -672,6 +672,16 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
         if (modal) modal.style.display = "none";
         xBtn.remove(); // 移除 fixed 按钮
     };
+
+    // [Fix] Add MutationObserver to ensure button is removed even if modal is closed via background click
+    const observer = new MutationObserver(() => {
+        if (!wrapper.isConnected || (wrapper.closest(".comfy-modal") && wrapper.closest(".comfy-modal").style.display === "none")) {
+            xBtn.remove();
+            observer.disconnect();
+        }
+    });
+    // Start observing body for changes that might remove the modal
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
 
     // Header 标题 (内嵌在 wrapper 内)
     const totalCount = matches.length + downloadResults.length + unmatched.length;
