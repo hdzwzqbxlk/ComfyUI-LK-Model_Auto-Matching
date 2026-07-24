@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.5.4" # Bugfix: Civitai 403 Forbidden Fix
+__version__ = "3.6.0" # Performance Optimization & Search API Bugfix
 __author__ = "LK"
 
 # 初始化核心组件
@@ -50,6 +50,7 @@ async def search_models(request):
         # 准备并发任务
         tasks = []
         original_filenames = []
+        results = []
         
         from .core.scanner import is_valid_model_file
         import asyncio
@@ -84,20 +85,15 @@ async def search_models(request):
                 tasks.append(searcher.search(filename, ignore_cache=ignore_cache))
                 original_filenames.append(filename)
 
-        
-        if not tasks:
-            return web.json_response({"downloads": []})
-            
-        # 并发执行所有搜索
-        search_results = await asyncio.gather(*tasks)
-        
-        results = []
-        for filename, result_list in zip(original_filenames, search_results):
-            if result_list and isinstance(result_list, list) and len(result_list) > 0:
-                results.append({
-                    "original": filename,
-                    "result": result_list[0] # Unwrap list to get the best match object
-                })
+        if tasks:
+            # 并发执行所有搜索
+            search_results = await asyncio.gather(*tasks)
+            for filename, result_list in zip(original_filenames, search_results):
+                if result_list and isinstance(result_list, list) and len(result_list) > 0:
+                    results.append({
+                        "original": filename,
+                        "result": result_list[0] # Unwrap list to get the best match object
+                    })
         
         return web.json_response({"downloads": results})
     except Exception as e:
@@ -108,6 +104,7 @@ async def search_models(request):
 async def refresh_index(request):
     try:
         count = scanner.scan_incremental()
+        matcher.invalidate_index()
         return web.json_response({"status": "ok", "count": count})
     except Exception as e:
         print(f"[AutoModelMatcher] Index Refresh Error: {e}")

@@ -8,16 +8,22 @@ except ImportError:
 class ModelMatcher:
     def __init__(self, scanner):
         self.scanner = scanner
-        self.scanner = scanner
         # 倒排索引: {token: set(model_indices)}
         self.inverted_index = {}
         self.model_list = [] # List storing actual model info, referenced by index
+        self._index_built = False
+        self._last_model_count = -1
         
         # Pre-compile regex for performance
         import re
         self.rank_pat = re.compile(r'(?:rank|step|epoch)[-_]?(\d+)')
         self.anchor_pat = re.compile(r"(?i)^(wan\d|sdxl|pony|flux)")
         self.ver_pat = re.compile(r"(?i)^(v\d|\d+\.\d+)")
+
+    def invalidate_index(self):
+        """显式使索引失效，强制在下次匹配时重新构建"""
+        self._index_built = False
+        self._last_model_count = -1
 
     def _normalize_name(self, name):
         """标准化模型名称，移除扩展名并转小写"""
@@ -31,9 +37,17 @@ class ModelMatcher:
         base, _ = os.path.splitext(name)
         return base.lower().strip()
 
-    def _build_index(self):
-        """构建倒排索引以加速匹配 (O(N) -> O(1))"""
-        self.model_list = list(self.scanner.get_all_models())
+    def _build_index(self, force=False):
+        """构建倒排索引以加速匹配 (O(N) -> O(1))，具备缓存校验功能"""
+        current_models = list(self.scanner.get_all_models())
+        current_count = len(current_models)
+        
+        # 如果索引已建立且模型数量一致，且未强制刷选，则复用现有倒排索引
+        if self._index_built and not force and current_count == self._last_model_count:
+            return
+
+        self.model_list = current_models
+        self._last_model_count = current_count
         self.inverted_index = {}
         
         # [v3.2.0] Phase 3: 格式分区索引
@@ -62,6 +76,8 @@ class ModelMatcher:
                 if token not in self.inverted_index:
                     self.inverted_index[token] = set()
                 self.inverted_index[token].add(idx)
+                
+        self._index_built = True
 
     def match(self, missing_items):
         """

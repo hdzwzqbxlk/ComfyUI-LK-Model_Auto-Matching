@@ -1,5 +1,19 @@
 # Changelog
- 
+
+## [3.6.0] - 2026-07-24
+### Fixed
+- **Search API Scope Bug**: Fixed `UnboundLocalError` in `/auto-matcher/search` route when returning unindexed local files.
+
+### Optimized
+- **Inverted Index Caching**: Added lazy index building (`_index_built`) in `ModelMatcher`. Reduces matching latency from ~55ms to ~7.3ms (7.6x speedup) for large libraries.
+- **Index Invalidation**: Linked index invalidation to `/auto-matcher/refresh-index` to ensure cache accuracy on disk changes.
+
+## [3.5.7] - 2026-02-08
+### Fixed
+- **Strict Type Enforcement**: Implemented strict type checking in Fuzzy/Legacy matching. Now, if a widget expects a `Checkpoint`, any `LoRA` candidates are immediately disqualified, preventing cross-type mismatches.
+- **UI Residue Cleaner**: Introduced `MutationObserver` to monitor the modal's lifecycle. This ensures the floating close button is instantly removed even when the modal is closed via background click.
+- **Type Display**: Fixed a bug where match results were missing the `type` field, causing them to appear as "UNKNOWN" in the UI.
+
 ## [3.5.6] - 2026-02-07
 ### Fixed
 - **Deep Path Normalization**: Added a final layer of path normalization in the Matcher to ensure all output paths (including those from legacy indices or hardcoded databases) use the correct system separator.
