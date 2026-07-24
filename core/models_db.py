@@ -2,12 +2,18 @@
 [Auto-Generated] 全量模型精确匹配数据库
 包含仓库: Kijai, Comfy-Org, City96, bartowski, mradermacher, MaziyarPanahi
 总模型数: 3236
-生成时间: 2026-02-02 03:35:07
+生成时间: 2026-07-24 13:02:51
 """
 import os
 
 # Civitai 风格命名映射 (手动维护)
 CIVITAI_MAP = {
+    # aniWan 系列
+    "aniwan2114bfp8e4m3fn_i2v480pnew": "Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors",
+    "aniwan2114bfp8e4m3fn": "Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors",
+    "aniwan21t2v14b": "Wan2_1-T2V-14B_fp8_e4m3fn.safetensors",
+    "aniwani2v14b": "Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors",
+    
     # rCM LoRA
     "wan_2_1_t2v_14b_rcm_lora_average_rank_83": "LoRAs/rCM/Wan_2_1_T2V_14B_480p_rCM_lora_average_rank_83_bf16.safetensors",
     "wan_2_1_t2v_14b_rcm_lora_average_rank_148": "LoRAs/rCM/Wan_2_1_T2V_14B_480p_rCM_lora_average_rank_148_bf16.safetensors",
@@ -3294,8 +3300,7 @@ def find_best_match_in_db(filename: str) -> tuple:
                     "path": map_path,
                     "filename": os.path.basename(map_path),
                     "url": f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{map_path}",
-                    "pageUrl": "https://huggingface.co/Kijai/WanVideo_comfy",
-                    "source": "Civitai-Alias"  # [Fix] v3.5.1
+                    "pageUrl": "https://huggingface.co/Kijai/WanVideo_comfy"
                 }, 0.99)
 
     # 3. RapidFuzz 模糊匹配 (针对 3000+ 文件)
@@ -3320,15 +3325,8 @@ def find_best_match_in_db(filename: str) -> tuple:
     return (None, 0)
 
 def _enrich_info(info):
-    """添加 URL 和 source 字段 [v3.5.1 Fix]"""
+    """添加 URL 字段"""
     new_info = info.copy()
     new_info["url"] = f"https://huggingface.co/{info['repo_id']}/resolve/main/{info['path']}"
     new_info["pageUrl"] = f"https://huggingface.co/{info['repo_id']}/tree/main"
-    # [v3.5.1] Add source field based on repo_id
-    if "Kijai" in info['repo_id']:
-        new_info["source"] = "Kijai"
-    elif "Comfy-Org" in info['repo_id']:
-        new_info["source"] = "Comfy-Org"
-    else:
-        new_info["source"] = info['repo_id'].split('/')[0] if '/' in info['repo_id'] else "Unknown"
     return new_info
