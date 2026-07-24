@@ -4,7 +4,7 @@ import json
 import time
 import folder_paths
 
-# 定义要扫描的模型类型 (对应 folder_paths 中的 key)
+# 定义要扫描的模型类型 (对应 folder_paths 中的 key，对齐 ComfyUI 最新官方规范)
 MODEL_TYPES = {
     "checkpoints": "checkpoints",
     "loras": "loras",
@@ -14,9 +14,13 @@ MODEL_TYPES = {
     "embeddings": "embeddings",
     "clip": "clip",
     "unet": "unet",
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders",
     "clip_vision": "clip_vision",
     "style_models": "style_models",
-    "diffusers": "diffusers"
+    "diffusers": "diffusers",
+    "gligen": "gligen",
+    "hypernetworks": "hypernetworks"
 }
 
 # 有效模型文件扩展名 (用于过滤非模型文件)
@@ -49,7 +53,24 @@ class ModelIndex:
                 with open(self.index_file, "r", encoding="utf-8") as f:
                     saved_data = json.load(f)
                     if saved_data.get("version") == HASH_VERSION:
+                        raw_models = saved_data.get("models", {})
+                        # [自愈擦除] 清理物理磁盘上已不存在的无效文件条目
+                        cleaned_models = {}
+                        removed_count = 0
+                        for h, info in raw_models.items():
+                            p = info.get("path")
+                            if p and os.path.exists(p):
+                                cleaned_models[h] = info
+                            else:
+                                removed_count += 1
+                        
+                        saved_data["models"] = cleaned_models
                         self.data = saved_data
+                        
+                        # 若清理了已删除的记录，自动写回索引镜像文件
+                        if removed_count > 0:
+                            print(f"[AutoMatch] Cleaned {removed_count} deleted model entries from index.")
+                            self.save_index()
                     else:
                         print("[AutoMatch] Index version mismatch, rebuilding...")
             except Exception as e:
@@ -229,7 +250,12 @@ class ModelIndex:
         return len(next_models)
 
     def get_all_models(self):
-        return self.data["models"].values()
+        """返回所有有效的模型信息（运行时校验物理存在性）"""
+        valid_models = []
+        for info in self.data["models"].values():
+            if os.path.exists(info["path"]):
+                valid_models.append(info)
+        return valid_models
 
     def find_local_file(self, filename):
         """
@@ -237,7 +263,7 @@ class ModelIndex:
         """
         # 1. 尝试精确文件名匹配
         for info in self.data["models"].values():
-            if info["filename"] == filename or os.path.basename(info["path"]) == filename:
+            if (info["filename"] == filename or os.path.basename(info["path"]) == filename) and os.path.exists(info["path"]):
                 return info["path"]
         return None
 

@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.6.0" # Performance Optimization & Search API Bugfix
+__version__ = "3.6.1" # Alignment with Official Specs, CJK Precision & Self-Healing Index
 __author__ = "LK"
 
 # 初始化核心组件

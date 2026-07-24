@@ -307,14 +307,20 @@ class AdvancedTokenizer:
                 tokens.extend(expanded)
                 continue
 
-            # 5. Split alpha and numeric, BUT keep CJK characters
-            # Modified regex to include non-ASCII characters (e.g. Chinese)
-            # [a-z]+ matches English words
-            # \d+ matches numbers
-            # [^\x00-\x7f]+ matches non-ASCII (Chinese, etc.)
+            # 5. Split alpha, numeric, and CJK characters (with N-Gram Sliding Window for CJK)
             sub_tokens = re.findall(r'[a-z]+|\d+|[^\x00-\x7f]+', part)
             if sub_tokens:
-                tokens.extend(sub_tokens)
+                for st in sub_tokens:
+                    tokens.append(st)
+                    # [v3.6.0 CJK N-Gram] 针对中文字串提取滑动窗口 2-Gram 词块及单字
+                    if re.search(r'[\u4e00-\u9fff]', st):
+                        cjk_chars = [c for c in st if re.match(r'[\u4e00-\u9fff]', c)]
+                        if len(cjk_chars) > 1:
+                            # 2-Gram 词块
+                            for i in range(len(cjk_chars) - 1):
+                                tokens.append(cjk_chars[i] + cjk_chars[i+1])
+                        # 单字
+                        tokens.extend(cjk_chars)
             else:
                 tokens.append(part)
                 

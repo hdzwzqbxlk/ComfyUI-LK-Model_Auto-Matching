@@ -103,12 +103,18 @@ class ModelMatcher:
             "basename_map": basename_map,
             "WIDGET_TO_TYPE": {
                 "ckpt_name": ["checkpoints", "unet", "diffusion_models"],
+                "unet_name": ["unet", "diffusion_models", "checkpoints"],
+                "model_name": ["unet", "diffusion_models", "checkpoints"],
+                "diffusion_model": ["diffusion_models", "unet", "checkpoints"],
                 "lora_name": ["loras"],
                 "vae_name": ["vae"],
-                "clip_name": ["clip"],
+                "clip_name": ["clip", "text_encoders"],
+                "text_encoder_name": ["text_encoders", "clip"],
                 "control_net_name": ["controlnet", "t2i_adapter"],
+                "controlnet_name": ["controlnet", "t2i_adapter"],
                 "upscale_model_name": ["upscale_models"],
                 "embeddings_name": ["embeddings"],
+                "embedding_name": ["embeddings"],
                 "style_model_name": ["style_models"],
                 "hypernetwork_name": ["hypernetworks"],
                 "gligen_name": ["gligen"],
@@ -374,8 +380,16 @@ class ModelMatcher:
                     continue  # Strict Skip
                 type_score = 30.0 # Bonus for consistency match
 
+            # 4. [v3.6.0] CJK 中文字符重叠 Bonus
+            cjk_bonus = 0.0
+            t_cjk = set(re.findall(r'[\u4e00-\u9fff]', target_base))
+            c_cjk = set(re.findall(r'[\u4e00-\u9fff]', cand_base))
+            if t_cjk and c_cjk:
+                common_cjk = t_cjk.intersection(c_cjk)
+                if common_cjk:
+                    cjk_bonus = (len(common_cjk) / min(len(t_cjk), len(c_cjk))) * 25.0
             
-            final_score = (base_final + type_score) * format_multiplier
+            final_score = (base_final + type_score + cjk_bonus) * format_multiplier
             
             if final_score > best_score:
                 best_score = final_score
@@ -455,13 +469,13 @@ class ModelMatcher:
         
         available_names = list(basename_map.keys())
         
-        # Use simple ratio or partial_ratio
-        # score_cutoff=85 equivalent to 0.85
+        # [v3.6.0] 提升中文与复杂前后缀模型比对支持
+        # 使用 token_set_ratio，容忍带有作者前缀、目录层级、版本描述的中英文混排
         match = process.extractOne(
             target_base, 
             available_names, 
-            scorer=fuzz.ratio, 
-            score_cutoff=85
+            scorer=fuzz.token_set_ratio, 
+            score_cutoff=75
         )
         
         if match:

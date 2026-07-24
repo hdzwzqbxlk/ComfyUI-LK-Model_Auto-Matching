@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.6.1] - 2026-07-24
+### Added
+- **Official Specs Alignment**: Full support for latest ComfyUI folders (`diffusion_models`, `text_encoders`) and new widget names (`diffusion_model`, `text_encoder_name`, `unet_name`).
+
+### Fixed & Improved
+- **CJK Precision Matching**: Added 2-Gram sliding window tokenization and CJK character overlap scoring bonus.
+- **Index Self-Healing**: Automatically cleans physically deleted model entries during `load_index()` and runtime `get_all_models()`.
+
 ## [3.6.0] - 2026-07-24
 ### Fixed
 - **Search API Scope Bug**: Fixed `UnboundLocalError` in `/auto-matcher/search` route when returning unindexed local files.
