@@ -169,14 +169,68 @@ class ModelIndex:
         # 2. 双向路径擦除与对齐
         next_models = {}
         path_to_hash = {}
+        # 存储旧索引中的文件元数据，用于快速比对
+        old_model_metadata = {}
         for h, info in self.data["models"].items():
             if info.get("path"):
                 path_to_hash[info["path"]] = h
+                old_model_metadata[h] = {
+                    "size": info.get("size"),
+                    "mtime": info.get("mtime"),
+                    "type": info.get("type"),
+                    "filename": info.get("filename")
+                }
 
-        # 统计被删除的文件数量
+        # 统计被删除的文件数量 (基于路径)
         old_paths = set(path_to_hash.keys())
         current_disk_paths = set(disk_files.keys())
         removed_paths = old_paths - current_disk_paths
+        
+        # 用于存储在磁盘上存在但路径不在旧索引中的文件（可能是新增或移动）
+        potential_new_or_moved_files = {}
+        for path, meta in disk_files.items():
+            if path not in old_paths:
+                potential_new_or_moved_files[path] = meta
+
+        # 尝试识别移动文件：通过对比 size + mtime
+        # 针对 removed_paths 中的每一个旧文件，尝试在 potential_new_or_moved_files 中找到匹配项
+        moved_files_map = {}
+        # 创建一个反向映射，通过 size-mtime 组合来查找旧索引中的文件哈希
+        size_mtime_to_hash = {}
+        for h, meta in old_model_metadata.items():
+            key = f"{meta['size']}-{meta['mtime']}"
+            # 假设 size-mtime 组合是唯一的，或者我们只关心第一次匹配到的
+            if key not in size_mtime_to_hash:
+                size_mtime_to_hash[key] = h
+
+        files_to_recalculate_hash = {}
+
+        for new_path, new_meta in potential_new_or_moved_files.items():
+            # 尝试根据 size-mtime 找到旧的 hash
+            key = f"{new_meta['size']}-{new_meta['mtime']}"
+            if key in size_mtime_to_hash:
+                old_hash_candidate = size_mtime_to_hash[key]
+                # 确认这个 hash 对应的旧路径确实被移除了
+                if old_hash_candidate in self.data["models"] and self.data["models"][old_hash_candidate]["path"] in removed_paths:
+                    # 这是一个移动的文件，重用旧哈希
+                    moved_files_map[new_path] = old_hash_candidate
+                    # 从 removed_paths 中移除，因为它不是真的被删除了
+                    removed_paths.remove(self.data["models"][old_hash_candidate]["path"])
+                    # 将这个旧哈希对应的元数据更新到新路径
+                    next_models[old_hash_candidate] = {
+                        "path": new_path,
+                        "filename": new_meta["filename"],
+                        "type": new_meta["type"],
+                        "size": new_meta["size"],
+                        "mtime": new_meta["mtime"],
+                        "hash": old_hash_candidate # 重用旧哈希
+                    }
+                    new_or_updated_count += 1 # 算作更新
+                else:
+                    files_to_recalculate_hash[new_path] = new_meta
+            else:
+                files_to_recalculate_hash[new_path] = new_meta
+        
         removed_count = len(removed_paths)
 
         # 3. 处理磁盘当前存在的文件 (只对新文件/修改文件重算 Hash，旧文件 0ms 秒级复用)
@@ -188,6 +242,10 @@ class ModelIndex:
                 old_hash = path_to_hash[path]
                 old_info = self.data["models"].get(old_hash)
                 
+                # 如果这个文件已经被识别为移动文件的新路径，则跳过
+                if path in moved_files_map:
+                    continue
+
                 # 时间与大小一致 ➡️ 100% 秒级复用原 Hash (0ms, 不读文件)
                 if old_info and old_info.get("size") == meta["size"] and abs(old_info.get("mtime", 0) - meta["mtime"]) < 1.0:
                     file_hash = old_hash
@@ -197,6 +255,8 @@ class ModelIndex:
                     # 文件有变动，才计算 Fast Hash
                     file_hash = self.calculate_fast_hash(path)
                     new_or_updated_count += 1
+            elif path in moved_files_map: # 如果是移动文件，已经处理过了
+                continue
             else:
                 # 全新文件，才计算 Fast Hash
                 file_hash = self.calculate_fast_hash(path)
