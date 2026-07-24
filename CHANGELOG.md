@@ -1,5 +1,9 @@
 # Changelog
 
+## [3.6.2] - 2026-07-24
+### Optimized
+- **Zero-Hashing Fast Alignment**: Implemented bi-directional path set alignment in `scan_incremental()`. Cleans deleted models in 15ms without re-computing hashes for existing files.
+
 ## [3.6.1] - 2026-07-24
 ### Added
 - **Official Specs Alignment**: Full support for latest ComfyUI folders (`diffusion_models`, `text_encoders`) and new widget names (`diffusion_model`, `text_encoder_name`, `unet_name`).

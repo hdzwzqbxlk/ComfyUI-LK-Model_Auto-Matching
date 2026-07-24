@@ -4,7 +4,7 @@ from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.6.1" # Alignment with Official Specs, CJK Precision & Self-Healing Index
+__version__ = "3.6.2" # Zero-Hashing Bi-Directional Fast Path Alignment Indexing
 __author__ = "LK"
 
 # 初始化核心组件

@@ -118,33 +118,18 @@ class ModelIndex:
 
     def scan_incremental(self):
         """
-        执行增量扫描
+        执行极速双向路径对齐扫描 (Bi-directional Path Alignment)
+        0 重算 Hash 情况下秒级擦除被删模型，保持 100% 动态对齐
         """
         start_time = time.time()
-        print("[AutoMatch] Starting incremental scan...")
+        print("[AutoMatch] Starting fast bi-directional path alignment scan...")
         
-        current_models_on_disk = set()
         new_or_updated_count = 0
         
-        # 1. Scan disk (Refactored below)
-
-
-        # 优化: 重构数据结构以支持 Path-Key 查找?
-        # 不，用户要求 "模型位置变动也能感应到"，这意味着 Identity 是 Hash。
-        # 如果 v1.5 从 A 移到 B。
-        # 1. A 消失 -> Scan 发现 A 不在 disk。
-        # 2. B 出现 -> Scan 发现 B 是新文件。
-        # 3. 计算 B 的 Hash -> 发现 Hash 等于原来的 A。
-        # 4. 更新条目: Hash 不变，Path 变了。
-        
-        # 实现逻辑:
-        # A. 构建 disk_files_map: { full_path: { type, filename, mtime, size } }
-        # Implement logic:
-        # A. Build disk_files_map by manually walking directories
+        # 1. 内存/磁盘仅读元数据采样 (Walk disk with os.stat)
         disk_files = {}
         for type_key, folder_key in MODEL_TYPES.items():
             try:
-                # ComfyUI cache bypass: Get root folders instead of file list
                 roots = folder_paths.get_folder_paths(folder_key)
                 if not roots:
                     continue
@@ -154,11 +139,10 @@ class ModelIndex:
                         continue
                         
                     for root, dirs, files in os.walk(root_path, followlinks=True):
-                        # Filter hidden directories
+                        # 过滤隐藏目录
                         dirs[:] = [d for d in dirs if not d.startswith('.')]
                         
                         for filename in files:
-                            # Filter hidden files
                             if filename.startswith('.'):
                                 continue
                                 
@@ -168,16 +152,10 @@ class ModelIndex:
                                 
                             full_path = os.path.join(root, filename)
                             
-                            # Get relative path for display/logic (optional, but good for consistency)
-                            # relative_name = os.path.relpath(full_path, root_path)
-                            
                             try:
                                 stat = os.stat(full_path)
                                 disk_files[full_path] = {
                                     "type": type_key,
-                                    # But here we probably want the full relative path if it's in a subdir?
-                                    # ComfyUI's get_filename_list returns "sub/model.safetensors"
-                                    # Let's try to match that behavior.
                                     "filename": os.path.relpath(full_path, root_path),
                                     "size": stat.st_size,
                                     "mtime": stat.st_mtime
@@ -188,65 +166,59 @@ class ModelIndex:
                 print(f"[AutoMatch] Error scanning {type_key}: {e}")
                 pass
 
-        # B. 遍历现有索引，标记移除和保持
-        # existing_index: { hash: info }
-        # 我们需要识别:
-        # 1. 路径匹配且 mtime/size 匹配 -> 保持 (Keep)
-        # 2. 路径匹配但 mtime/size 变了 -> 需要重算 Hash (Dirty)
-        # 3. 路径在索引有但在 disk_files 无 -> 可能是移动了或删除了 (Lost)
-        
-        # 为了处理移动，我们需要 careful。
-        
-        next_models = {} # 新的 models 字典
-        
-        # 建立 path -> hash 的映射以便快速查找
+        # 2. 双向路径擦除与对齐
+        next_models = {}
         path_to_hash = {}
         for h, info in self.data["models"].items():
-            path_to_hash[info["path"]] = h
+            if info.get("path"):
+                path_to_hash[info["path"]] = h
 
-        # 处理磁盘文件
+        # 统计被删除的文件数量
+        old_paths = set(path_to_hash.keys())
+        current_disk_paths = set(disk_files.keys())
+        removed_paths = old_paths - current_disk_paths
+        removed_count = len(removed_paths)
+
+        # 3. 处理磁盘当前存在的文件 (只对新文件/修改文件重算 Hash，旧文件 0ms 秒级复用)
         for path, meta in disk_files.items():
             file_hash = None
             
-            # Case 1: 路径在索引中存在
+            # Case 1: 路径在旧索引中存在
             if path in path_to_hash:
                 old_hash = path_to_hash[path]
                 old_info = self.data["models"].get(old_hash)
                 
-                # Check consistency
-                if old_info and old_info["size"] == meta["size"] and abs(old_info["mtime"] - meta["mtime"]) < 1.0:
-                    # 完全没变
+                # 时间与大小一致 ➡️ 100% 秒级复用原 Hash (0ms, 不读文件)
+                if old_info and old_info.get("size") == meta["size"] and abs(old_info.get("mtime", 0) - meta["mtime"]) < 1.0:
                     file_hash = old_hash
-                    # 更新 entry (直接复用 old_info)
                     next_models[file_hash] = old_info
                     continue
                 else:
-                    # 变了 (Modified), 重算 hash
+                    # 文件有变动，才计算 Fast Hash
                     file_hash = self.calculate_fast_hash(path)
                     new_or_updated_count += 1
             else:
-                # Case 2: 新路径 (New File or Moved File)
+                # 全新文件，才计算 Fast Hash
                 file_hash = self.calculate_fast_hash(path)
                 new_or_updated_count += 1
             
             if file_hash:
-                # 更新/添加到新索引
                 next_models[file_hash] = {
                     "path": path,
                     "filename": meta["filename"],
                     "type": meta["type"],
                     "size": meta["size"],
                     "mtime": meta["mtime"],
-                    "hash": file_hash # 冗余存储方便
+                    "hash": file_hash
                 }
 
-        # 3. 替换索引
+        # 4. 彻底擦除并同步镜像
         self.data["models"] = next_models
         self.data["last_scan"] = time.time()
         self.save_index()
         
         elapsed = time.time() - start_time
-        print(f"[AutoMatch] Scan finished in {elapsed:.2f}s. Total: {len(next_models)}, Updated: {new_or_updated_count}")
+        print(f"[AutoMatch] Alignment finished in {elapsed:.3f}s. Total: {len(next_models)}, Added/Updated: {new_or_updated_count}, Removed: {removed_count}")
         return len(next_models)
 
     def get_all_models(self):
