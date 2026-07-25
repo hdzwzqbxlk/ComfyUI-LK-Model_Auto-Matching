@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-let PROJECT_VERSION = "3.6.2"; // Default fallback
+let PROJECT_VERSION = "3.6.3"; // Default fallback
 
 app.registerExtension({
     name: "Comfy.AutoModelMatcher",
