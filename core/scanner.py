@@ -2,6 +2,7 @@ import os
 import hashlib
 import json
 import time
+import logging
 import folder_paths
 
 # 定义要扫描的模型类型 (对应 folder_paths 中的 key，对齐 ComfyUI 最新官方规范)
@@ -45,6 +46,9 @@ class ModelIndex:
             "last_scan": 0,
             "models": {} # { unique_hash: { path, filename, type, size, mtime } }
         }
+        # [v3.6.3] 索引修订号：模型集合发生任何变化时递增，
+        # 供 Matcher 做缓存校验（替代不可靠的“数量比对”）
+        self.revision = 0
         self.load_index()
 
     def load_index(self):
@@ -70,6 +74,7 @@ class ModelIndex:
                         # 若清理了已删除的记录，自动写回索引镜像文件
                         if removed_count > 0:
                             print(f"[AutoMatch] Cleaned {removed_count} deleted model entries from index.")
+                            self.revision += 1
                             self.save_index()
                     else:
                         print("[AutoMatch] Index version mismatch, rebuilding...")
@@ -273,6 +278,9 @@ class ModelIndex:
                 }
 
         # 4. 彻底擦除并同步镜像
+        # [v3.6.3] 仅当模型集合真正发生变化时才递增修订号（触发 Matcher 重建倒排索引）
+        if new_or_updated_count > 0 or removed_count > 0:
+            self.revision += 1
         self.data["models"] = next_models
         self.data["last_scan"] = time.time()
         self.save_index()
@@ -280,6 +288,16 @@ class ModelIndex:
         elapsed = time.time() - start_time
         print(f"[AutoMatch] Alignment finished in {elapsed:.3f}s. Total: {len(next_models)}, Added/Updated: {new_or_updated_count}, Removed: {removed_count}")
         return len(next_models)
+
+    def auto_sync(self, max_age=3.0):
+        """
+        [v3.6.3] 轻量自动对齐：距上次扫描超过 max_age 秒才执行增量对齐。
+        供匹配/搜索流程在读取索引前调用，避免“先点刷新再点匹配”的额外操作。
+        双向对齐扫描为 0-Hash 设计，常规库规模下毫秒级完成，无性能负担。
+        """
+        if time.time() - self.data.get("last_scan", 0) < max_age:
+            return len(self.data["models"])
+        return self.scan_incremental()
 
     def get_all_models(self):
         """返回所有有效的模型信息（运行时校验物理存在性）"""
@@ -301,3 +319,6 @@ class ModelIndex:
 
 class ModelScanner(ModelIndex):
     pass
+
+from .logging import get_logger
+logger = get_logger(__name__)

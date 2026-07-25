@@ -2,6 +2,8 @@ import sqlite3
 import os
 import json
 import logging
+import re
+from difflib import SequenceMatcher
 
 class ModelDatabase:
     """
@@ -24,8 +26,12 @@ class ModelDatabase:
             os.makedirs(directory)
 
     def _get_connection(self):
-        """获取数据库连接"""
-        return sqlite3.connect(self.db_path)
+        """获取数据库连接（复用持久连接，WAL 模式）"""
+        if not hasattr(self, '_conn') or self._conn is None:
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+        return self._conn
 
     def _init_db(self):
         """初始化数据库 Schema"""
@@ -66,7 +72,7 @@ class ModelDatabase:
         ''')
 
         conn.commit()
-        conn.close()
+        # conn kept alive for reuse
 
     def add_model(self, name, model_type=None, base_model=None, description=None):
         """添加或获取模型 ID"""
@@ -85,7 +91,7 @@ class ModelDatabase:
             row = cursor.fetchone()
             return row[0] if row else None
         finally:
-            conn.close()
+            pass  # conn kept alive for reuse
 
     def add_hash(self, sha256, model_id, filename=None, source="User"):
         """添加文件哈希映射"""
@@ -98,7 +104,7 @@ class ModelDatabase:
             ''', (sha256, model_id, filename, source))
             conn.commit()
         finally:
-            conn.close()
+            pass  # conn kept alive for reuse
 
     def add_alias(self, alias, model_id, is_regex=False):
         """添加模型别名"""
@@ -111,7 +117,7 @@ class ModelDatabase:
             ''', (alias.lower(), model_id, is_regex))
             conn.commit()
         finally:
-            conn.close()
+            pass  # conn kept alive for reuse
 
     def get_model_by_hash(self, sha256):
         """通过哈希查找模型"""
@@ -126,12 +132,12 @@ class ModelDatabase:
             ''', (sha256,))
             return cursor.fetchone()
         finally:
-            conn.close()
+            pass  # conn kept alive for reuse
 
     def search_by_filename(self, filename):
         """
-        通过文件名查找模型 (Phase 2 Simple Implementation)
-        目前主要匹配 aliases 表中的精确别名
+        通过文件名查找模型 (Phase 2 Enhanced Implementation)
+        支持精确匹配、正则匹配和模糊匹配
         返回: (name, type, base_model, description)
         """
         conn = self._get_connection()
@@ -151,11 +157,46 @@ class ModelDatabase:
             result = cursor.fetchone()
             if result:
                 return result
-                
-            # TODO: 实现正则匹配 (L3) 和 模糊匹配逻辑
-            return None
+            
+            # 正则匹配 (L3): 尝试所有正则别名
+            cursor.execute('''
+            SELECT a.alias, m.name, m.type, m.base_model, m.description
+            FROM aliases a
+            JOIN models m ON a.model_id = m.id
+            WHERE a.is_regex = 1
+            ''')
+            
+            regex_results = cursor.fetchall()
+            for alias, name, model_type, base_model, description in regex_results:
+                try:
+                    if re.search(alias, base_name, re.IGNORECASE):
+                        return (name, model_type, base_model, description)
+                except re.error:
+                    # Invalid regex pattern, skip
+                    continue
+            
+            # 模糊匹配: 使用 SequenceMatcher 找到最接近的别名
+            cursor.execute('''
+            SELECT a.alias, m.name, m.type, m.base_model, m.description
+            FROM aliases a
+            JOIN models m ON a.model_id = m.id
+            WHERE a.is_regex = 0
+            ''')
+            
+            all_aliases = cursor.fetchall()
+            best_match = None
+            best_score = 0.85  # 模糊匹配阈值
+            
+            for alias, name, model_type, base_model, description in all_aliases:
+                score = SequenceMatcher(None, base_name, alias).ratio()
+                if score > best_score:
+                    best_score = score
+                    best_match = (name, model_type, base_model, description)
+            
+            return best_match
+            
         finally:
-            conn.close()
+            pass  # conn kept alive for reuse
 
 # ... existing code ...
 
@@ -236,7 +277,7 @@ class ModelDatabase:
             print(f"[DB] Migration failed: {e}")
             conn.rollback()
         finally:
-            conn.close()
+            pass  # conn kept alive for reuse
 
 # 单例实例
 db = ModelDatabase()

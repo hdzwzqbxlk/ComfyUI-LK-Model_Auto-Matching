@@ -1,4 +1,7 @@
 import asyncio
+import logging
+from .logging import get_logger
+logger = get_logger(__name__)
 import urllib.parse
 import os
 import json
@@ -38,6 +41,20 @@ class BaseProvider:
             headers["Referer"] = referer
         return headers
 
+    def _record_error(self, status_or_err: str) -> bool:
+        """Record a provider error; returns True if circuit is now open."""
+        self._error_count += 1
+        if self._error_count >= self._error_threshold:
+            self._circuit_open = True
+            name = type(self).__name__
+            logger.warning("%s circuit OPEN after %d errors", name, self._error_count)
+            return True
+        return False
+
+    def _is_circuit_open(self) -> bool:
+        """Check whether circuit breaker is currently open."""
+        return getattr(self, "_circuit_open", False)
+
 
 class CivitaiHashProvider(BaseProvider):
     """
@@ -63,25 +80,6 @@ class CivitaiHashProvider(BaseProvider):
         return sha256.hexdigest()
     
     async def search_by_hash(self, file_path: str, original_filename: str):
-        """Search Civitai by SHA256"""
-        if getattr(self, "circuit_open", False):
-            print(f"[CivitaiProvider] Circuit Open (Blocking skipped)")
-            await asyncio.sleep(0) # Yield
-            return None
-
-        # Calculate Hash (Async)
-        # ...
-        
-        try:
-            # ... request ...
-            pass
-        except Exception as e:
-            if "403" in str(e):
-                self.error_count = getattr(self, "error_count", 0) + 1
-                if self.error_count >= 3:
-                    self.circuit_open = True
-                    print(f"[CivitaiProvider] 403 limit reached. Disabling Civitai for this session.")
-            return None
         """
         通过文件哈希精确匹配 Civitai 模型
         
@@ -95,19 +93,24 @@ class CivitaiHashProvider(BaseProvider):
         results = []
         
         if not os.path.exists(file_path):
-            print(f"[CivitaiHash] File not found: {file_path}")
+            logger.warning("File not found: %s", file_path)
             return results
-        
+
+        # Circuit breaker: skip if too many recent 403 responses
+        if self._is_circuit_open():
+            logger.warning("CivitaiHash circuit OPEN, skipping")
+            return results
+
         try:
             # 检查缓存
             if file_path in self._hash_cache:
                 file_hash = self._hash_cache[file_path]
             else:
-                print(f"[CivitaiHash] Calculating SHA256 for: {original_filename}")
+                logger.info("Calculating SHA256 for: %s", original_filename)
                 # [Optimization] Run hashing in a separate thread to avoid blocking the Event Loop
                 file_hash = await asyncio.to_thread(self.calculate_sha256, file_path)
                 self._hash_cache[file_path] = file_hash
-                print(f"[CivitaiHash] Hash: {file_hash[:16]}...")
+                logger.info("Hash: %s...", file_hash[:16])
             
             # [v3.0.3] 调用 Civitai API - 添加 Origin/Referer 绕过 Cloudflare
             headers = self._get_headers("https://civitai.com")
@@ -117,9 +120,9 @@ class CivitaiHashProvider(BaseProvider):
             token = self.config.get("civitai_api_key")
             if token:
                 headers["Authorization"] = f"Bearer {token}"
-                print(f"[CivitaiHash] Using API Key: {token[:8]}...")
+                logger.info("Using API Key: %s...", token[:8])
             else:
-                print(f"[CivitaiHash] Warning: No API Key configured")
+                logger.warning("No API Key configured")
 
             
             url = f"{self.api_url}/{file_hash}"
@@ -151,18 +154,20 @@ class CivitaiHashProvider(BaseProvider):
                             "hash_match": True
                         })
                         
-                        print(f"[CivitaiHash] ✓ Exact match found: {model_name}")
+                        logger.info("Exact match found: %s", model_name)
                         
                     except Exception as e:
-                        print(f"[CivitaiHash] Parse error: {e}")
+                        logger.warning("Parse error: %s", e)
                         
                 elif response.status_code == 404:
-                    print(f"[CivitaiHash] No match for hash (model may not be from Civitai)")
+                    logger.info("No match for hash (model may not be from Civitai)")
                 else:
-                    print(f"[CivitaiHash] API returned {response.status_code}")
+                    logger.info("API returned %d", response.status_code)
                     
         except Exception as e:
-            print(f"[CivitaiHash] Error: {e}")
+            logger.warning("Error: %s", e)
+            if "403" in str(e):
+                self._record_error(str(e))
         
         return results
 
@@ -204,7 +209,9 @@ class CivitaiProvider(BaseProvider):
                 
                 try:
                     data = response.json()
-                except: return []
+                except Exception:
+                    logger.warning("Failed to parse JSON response from %s", type(self).__name__)
+                    return []
 
                 items = data.get("items", [])
                 original_lower = original_filename.lower()
@@ -266,7 +273,9 @@ class HuggingFaceProvider(BaseProvider):
                 
                 try:
                     data = response.json()
-                except: return []
+                except Exception:
+                    logger.warning("Failed to parse JSON response from %s", type(self).__name__)
+                    return []
                 
                 original_lower = original_filename.lower()
                 
@@ -376,7 +385,6 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         # Sort by weight desc
         weighted.sort(key=lambda x: x['weight'], reverse=True)
         return [item['token'] for item in weighted if item['weight'] > 1] # Remove Noise
-        return [item['token'] for item in weighted_tokens if item['weight'] > 1]
         
     async def _discover_repos(self, session, keywords):
         """[v3.4.0] 动态仓库发现 (根据高权重关键词搜索 HF 仓库)"""
@@ -979,7 +987,12 @@ class GoogleOmniProvider(BaseProvider):
                         meta = self._parse_link(decoded_url, original_lower)
                         if meta and meta["score"] > 0.35:
                             results.append(meta)
-                    except: pass
+                    except (ValueError, UnicodeError) as e:
+                        # URL decoding errors - skip this result
+                        print(f"[GoogleOmni] URL decode error: {e}")
+                    except Exception as e:
+                        # Other parsing errors - log but continue
+                        print(f"[GoogleOmni] Link parsing error: {e}")
                             
         except Exception as e:
             print(f"[GoogleOmni] Error: {e}")
@@ -1262,6 +1275,8 @@ class ModelSearcher:
         self.config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
         self.config = self.load_config()
         self.search_cache = {}
+        # Lock for concurrent-safe cache access during asyncio.gather
+        self._cache_lock = asyncio.Lock()
         
         # Provider 优先级 [v3.0.1]:
         # 1. CivitaiHashProvider (100% 精确匹配，需要本地文件路径)
@@ -1287,7 +1302,12 @@ class ModelSearcher:
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except: pass
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                print(f"[ModelSearcher] Config file parse error: {e}")
+            except IOError as e:
+                print(f"[ModelSearcher] Config file read error: {e}")
+            except Exception as e:
+                print(f"[ModelSearcher] Config load error: {e}")
         return {"civitai_api_key": ""}
 
     def get_config(self):
@@ -1298,7 +1318,10 @@ class ModelSearcher:
         try:
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4)
-        except: pass
+        except (IOError, PermissionError) as e:
+            print(f"[ModelSearcher] Config file write error: {e}")
+        except Exception as e:
+            print(f"[ModelSearcher] Config save error: {e}")
         
     async def validate_api_key(self, api_key):
         if not api_key: return False, "Empty API Key"
@@ -1330,9 +1353,11 @@ class ModelSearcher:
             print(f"[AutoMatch] Skipped non-model file: {filename}")
             return None
         
-        if not ignore_cache and filename in self.search_cache:
-            print(f"[AutoMatch] Cache Hit: {filename}")
-            return self.search_cache[filename]
+        if not ignore_cache:
+            async with self._cache_lock:
+                if filename in self.search_cache:
+                    logger.debug("Cache Hit: %s", filename)
+                    return self.search_cache[filename]
         
         # [v3.0.1] 优先尝试 SHA256 哈希匹配 (100% 精确)
         if file_path and os.path.exists(file_path):
@@ -1341,7 +1366,8 @@ class ModelSearcher:
                 if hash_results:
                     best = hash_results[0]
                     print(f"[AutoMatch] ✓ Hash Match: {best['name']} (100% accurate)")
-                    self.search_cache[filename] = best
+                    async with self._cache_lock:
+                        self.search_cache[filename] = best
                     return best
             except Exception as e:
                 print(f"[AutoMatch] Hash search failed: {e}")
@@ -1476,9 +1502,15 @@ class ModelSearcher:
 
         if best_match:
             print(f"[AutoMatch] Match Found: {best_match['name']} ({best_match['source']}) Score: {best_match.get('score', 0):.2f}")
-            self.search_cache[filename] = best_match
+            async with self._cache_lock:
+                self.search_cache[filename] = best_match
             return [best_match]
         else:
             print(f"[AutoMatch] No match for: {filename}")
-            self.search_cache[filename] = None
+            async with self._cache_lock:
+                self.search_cache[filename] = None
             return []
+
+
+
+

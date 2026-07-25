@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.6.3] - 2026-07-24
+### Added
+- **Auto-Sync on Match**: `/auto-matcher/match` 与 `/auto-matcher/search` 路由现在会在执行前自动调用 `scanner.auto_sync()`（带 3 秒节流窗口的毫秒级双向对齐）。新拷贝进模型的文件即刻可匹配，被删除的文件即刻失效，无需再手动点击 🔄 刷新按钮。
+- **Index Revision Counter**: `ModelIndex` 新增 `revision` 修订号，模型集合发生任何变化（增/删/移动）时递增。
+
+### Fixed
+- **Stale Cache Edge Case**: `ModelMatcher._build_index` 缓存校验由"纯数量比对"升级为"修订号 + 数量"双重校验。修复"删一个模型又添加一个、总数不变"时倒排索引复用陈旧缓存的边界缺陷。
+
+### Verification
+- 新增 `scripts/verify_auto_sync.py`：16 项断言全覆盖（初始扫描、删一加一重建、缓存复用、auto_sync 节流与自动收录/擦除）。
+
 ## [3.6.2] - 2026-07-24
 ### Optimized
 - **Zero-Hashing Fast Alignment**: Implemented bi-directional path set alignment in `scan_incremental()`. Cleans deleted models in 15ms without re-computing hashes for existing files.

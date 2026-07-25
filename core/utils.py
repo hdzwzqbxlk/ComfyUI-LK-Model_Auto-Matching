@@ -215,6 +215,21 @@ class AdvancedTokenizer:
     """
     统一的智能分词器，用于本地匹配和网络搜索
     """
+
+    # Pre-compiled regex (avoid per-call re-compilation)
+    _RE_CAMEL = re.compile(r'([a-z])([A-Z])')
+    _RE_ACRONYM = re.compile(r'([A-Z]+)([A-Z][a-z])')
+    _RE_DIGIT_ALPHA = re.compile(r'(\d)([A-Za-z])')
+    _RE_ALPHA_DIGIT = re.compile(r'([A-Za-z])(\d)')
+    _RE_WAN21 = re.compile(r'wan\s*2[_\-\s]?1', re.IGNORECASE)
+    _RE_WAN22 = re.compile(r'wan\s*2[_\-\s]?2', re.IGNORECASE)
+    _RE_FLUX1 = re.compile(r'flux[_\-\s]?1', re.IGNORECASE)
+    _RE_FLUX2 = re.compile(r'flux[_\-\s]?2', re.IGNORECASE)
+    _RE_QWEN25 = re.compile(r'qwen[_\-\s]?2[_\-\s]?5', re.IGNORECASE)
+    _RE_CJK_EN = re.compile(r'([\u4e00-\u9fff])([a-zA-Z0-9])')
+    _RE_EN_CJK = re.compile(r'([a-zA-Z0-9])([\u4e00-\u9fff])')
+    _RE_F1 = re.compile(r'\bf[\.\-_\s]?1\b')
+    _RE_DELIM = re.compile(r'[_\-]')
     
 
 
@@ -1076,4 +1091,5 @@ class AdvancedTokenizer:
         final_score = (jaccard * 0.7) + (seq_ratio * 0.3)
              
         return final_score
+
 

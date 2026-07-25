@@ -1,9 +1,12 @@
 import difflib
 import os
+from .scanner import is_valid_model_file
 try:
     from .utils import AdvancedTokenizer
+    from .config import MatcherConfig
 except ImportError:
     from utils import AdvancedTokenizer
+    from config import MatcherConfig
 
 class ModelMatcher:
     def __init__(self, scanner):
@@ -13,6 +16,7 @@ class ModelMatcher:
         self.model_list = [] # List storing actual model info, referenced by index
         self._index_built = False
         self._last_model_count = -1
+        self._built_revision = -1 # [v3.6.3] 构建时对应的 Scanner 修订号
         
         # Pre-compile regex for performance
         import re
@@ -20,10 +24,31 @@ class ModelMatcher:
         self.anchor_pat = re.compile(r"(?i)^(wan\d|sdxl|pony|flux)")
         self.ver_pat = re.compile(r"(?i)^(v\d|\d+\.\d+)")
 
+    # Widget name -> compatible model type folders (class constant, built once)
+    WIDGET_TO_TYPE: dict[str, list[str]] = {
+        "ckpt_name": ["checkpoints", "unet", "diffusion_models"],
+        "unet_name": ["unet", "diffusion_models", "checkpoints"],
+        "model_name": ["unet", "diffusion_models", "checkpoints"],
+        "diffusion_model": ["diffusion_models", "unet", "checkpoints"],
+        "lora_name": ["loras"],
+        "vae_name": ["vae"],
+        "clip_name": ["clip", "text_encoders"],
+        "text_encoder_name": ["text_encoders", "clip"],
+        "control_net_name": ["controlnet", "t2i_adapter"],
+        "controlnet_name": ["controlnet", "t2i_adapter"],
+        "upscale_model_name": ["upscale_models"],
+        "embeddings_name": ["embeddings"],
+        "embedding_name": ["embeddings"],
+        "style_model_name": ["style_models"],
+        "hypernetwork_name": ["hypernetworks"],
+        "gligen_name": ["gligen"],
+    }
+
     def invalidate_index(self):
         """显式使索引失效，强制在下次匹配时重新构建"""
         self._index_built = False
         self._last_model_count = -1
+        self._built_revision = -1
 
     def _normalize_name(self, name):
         """标准化模型名称，移除扩展名并转小写"""
@@ -41,13 +66,19 @@ class ModelMatcher:
         """构建倒排索引以加速匹配 (O(N) -> O(1))，具备缓存校验功能"""
         current_models = list(self.scanner.get_all_models())
         current_count = len(current_models)
+        # [v3.6.3] 以 Scanner 修订号为准：模型集合内容变化（删一加一、移动、改名）
+        # 即使总数不变也能正确触发重建，杜绝陈旧缓存
+        current_revision = getattr(self.scanner, "revision", -1)
         
-        # 如果索引已建立且模型数量一致，且未强制刷选，则复用现有倒排索引
-        if self._index_built and not force and current_count == self._last_model_count:
+        # 如果索引已建立、修订号一致（数量一致作为兜底），且未强制刷选，则复用现有倒排索引
+        if (self._index_built and not force
+                and current_revision == self._built_revision
+                and current_count == self._last_model_count):
             return
 
         self.model_list = current_models
         self._last_model_count = current_count
+        self._built_revision = current_revision
         self.inverted_index = {}
         
         # [v3.2.0] Phase 3: 格式分区索引
@@ -101,24 +132,7 @@ class ModelMatcher:
         ctx = {
             "full_name_map": full_name_map,
             "basename_map": basename_map,
-            "WIDGET_TO_TYPE": {
-                "ckpt_name": ["checkpoints", "unet", "diffusion_models"],
-                "unet_name": ["unet", "diffusion_models", "checkpoints"],
-                "model_name": ["unet", "diffusion_models", "checkpoints"],
-                "diffusion_model": ["diffusion_models", "unet", "checkpoints"],
-                "lora_name": ["loras"],
-                "vae_name": ["vae"],
-                "clip_name": ["clip", "text_encoders"],
-                "text_encoder_name": ["text_encoders", "clip"],
-                "control_net_name": ["controlnet", "t2i_adapter"],
-                "controlnet_name": ["controlnet", "t2i_adapter"],
-                "upscale_model_name": ["upscale_models"],
-                "embeddings_name": ["embeddings"],
-                "embedding_name": ["embeddings"],
-                "style_model_name": ["style_models"],
-                "hypernetwork_name": ["hypernetworks"],
-                "gligen_name": ["gligen"],
-            }
+            "WIDGET_TO_TYPE": ModelMatcher.WIDGET_TO_TYPE,
         }
 
         for item in missing_items:
@@ -126,7 +140,6 @@ class ModelMatcher:
             if not current_val: continue
             
             # [Filter] Skip non-model files
-            from .scanner import is_valid_model_file
             if not is_valid_model_file(current_val): continue
             
             # Prepare Item Context
@@ -317,10 +330,6 @@ class ModelMatcher:
 
         # Weights & Anchors
         import re
-        W_ANCHOR = 10.0
-        W_VERSION = 5.0
-        W_NORMAL = 1.0
-        W_NOISE = 0.1
         from .utils import NOISE_SUFFIXES
         
         target_anchors = {t for t in target_tokens if self.anchor_pat.match(t)}
@@ -334,10 +343,10 @@ class ModelMatcher:
         # Calculate Max Score for Normalization
         max_possible_score = 0.0
         for token in target_tokens:
-            if token in target_anchors: max_possible_score += W_ANCHOR
-            elif token in target_versions: max_possible_score += W_VERSION
-            elif token in NOISE_SUFFIXES: max_possible_score += W_NOISE
-            else: max_possible_score += W_NORMAL
+            if token in target_anchors: max_possible_score += MatcherConfig.W_ANCHOR
+            elif token in target_versions: max_possible_score += MatcherConfig.W_VERSION
+            elif token in NOISE_SUFFIXES: max_possible_score += MatcherConfig.W_NOISE
+            else: max_possible_score += MatcherConfig.W_NORMAL
         
         if max_possible_score <= 0: return None
 
@@ -358,19 +367,19 @@ class ModelMatcher:
             score = 0.0
             for token in target_tokens:
                 if token in cand_tokens:
-                    if token in target_anchors: score += W_ANCHOR
-                    elif token in target_versions: score += W_VERSION
-                    elif token in NOISE_SUFFIXES: score += W_NOISE
-                    else: score += W_NORMAL
+                    if token in target_anchors: score += MatcherConfig.W_ANCHOR
+                    elif token in target_versions: score += MatcherConfig.W_VERSION
+                    elif token in NOISE_SUFFIXES: score += MatcherConfig.W_NOISE
+                    else: score += MatcherConfig.W_NORMAL
             
             base_final = (score / max_possible_score) * 100
             
             # 2. [v3.2.0] Multiplicative Format Penalty (Phase 2)
             # Format mismatch = hard zero, not weak penalty
             cand_fmt = AdvancedTokenizer.get_model_format(info["filename"])
-            format_multiplier = 1.0
+            format_multiplier = MatcherConfig.FORMAT_MATCH_MULTIPLIER
             if target_fmt != "other" and cand_fmt != "other" and target_fmt != cand_fmt:
-                format_multiplier = 0.0  # HARD ZERO
+                format_multiplier = MatcherConfig.FORMAT_MISMATCH_MULTIPLIER  # HARD ZERO
             
             # 3. [Fix] Strict Type Enforcement
             type_score = 0.0
@@ -378,7 +387,7 @@ class ModelMatcher:
             if expected_types:
                 if cand_type not in expected_types:
                     continue  # Strict Skip
-                type_score = 30.0 # Bonus for consistency match
+                type_score = MatcherConfig.TYPE_MATCH_BONUS  # Bonus for consistency match
 
             # 4. [v3.6.0] CJK 中文字符重叠 Bonus
             cjk_bonus = 0.0
@@ -387,7 +396,7 @@ class ModelMatcher:
             if t_cjk and c_cjk:
                 common_cjk = t_cjk.intersection(c_cjk)
                 if common_cjk:
-                    cjk_bonus = (len(common_cjk) / min(len(t_cjk), len(c_cjk))) * 25.0
+                    cjk_bonus = (len(common_cjk) / min(len(t_cjk), len(c_cjk))) * MatcherConfig.CJK_BONUS_MULTIPLIER
             
             final_score = (base_final + type_score + cjk_bonus) * format_multiplier
             
@@ -395,7 +404,7 @@ class ModelMatcher:
                 best_score = final_score
                 best_candidate = info
         
-        if best_score >= 60.0:
+        if best_score >= MatcherConfig.FUZZY_MATCH_THRESHOLD:
             return best_candidate
         return None
 
@@ -449,7 +458,7 @@ class ModelMatcher:
                 best_score = core_score
                 best_candidate = info
         
-        if best_score >= 0.9:
+        if best_score >= MatcherConfig.VARIANT_MATCH_THRESHOLD:
             return best_candidate
         return None
 
@@ -475,7 +484,7 @@ class ModelMatcher:
             target_base, 
             available_names, 
             scorer=fuzz.token_set_ratio, 
-            score_cutoff=75
+            score_cutoff=MatcherConfig.LEGACY_MATCH_THRESHOLD
         )
         
         if match:
@@ -517,3 +526,4 @@ class ModelMatcher:
                 return None
             return match_info
         return None
+

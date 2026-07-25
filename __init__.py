@@ -1,10 +1,13 @@
 import server
 from aiohttp import web
+import traceback
+from .core.logging import get_logger
+logger = get_logger(__name__)
 from .core.scanner import ModelScanner
 from .core.matcher import ModelMatcher
 from .core.searcher import ModelSearcher
 
-__version__ = "3.6.2" # Zero-Hashing Bi-Directional Fast Path Alignment Indexing
+__version__ = "3.6.3" # Auto-Sync on Match: Zero-Stale-Index Bi-Directional Alignment
 __author__ = "LK"
 
 # 初始化核心组件
@@ -18,6 +21,9 @@ async def match_models(request):
     try:
         data = await request.json()
         items = data.get("items", [])
+        
+        # [v3.6.3] 匹配前自动对齐磁盘索引（毫秒级），新拷贝/删除的模型即刻生效
+        scanner.auto_sync()
         
         # 调用新版 matcher，传入列表
         matches = matcher.match(items)
@@ -36,7 +42,7 @@ async def match_models(request):
         
         return web.json_response({"matches": results})
     except Exception as e:
-        print(f"[AutoModelMatcher] API Error: {e}")
+        logger.error("API Error: %s", e, exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
 
 @server.PromptServer.instance.routes.post("/auto-matcher/search")
@@ -54,6 +60,9 @@ async def search_models(request):
         
         from .core.scanner import is_valid_model_file
         import asyncio
+        
+        # [v3.6.3] 搜索前自动对齐磁盘索引，确保本地存在性检查基于最新状态
+        scanner.auto_sync()
         
         # [v3.0.3] 并发搜索前，先进行本地扫描
         for item in items:
@@ -97,7 +106,7 @@ async def search_models(request):
         
         return web.json_response({"downloads": results})
     except Exception as e:
-        print(f"[AutoModelMatcher] Search API Error: {e}")
+        logger.error("Search API Error: %s", e, exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
 
 @server.PromptServer.instance.routes.post("/auto-matcher/refresh-index")
@@ -107,7 +116,7 @@ async def refresh_index(request):
         matcher.invalidate_index()
         return web.json_response({"status": "ok", "count": count})
     except Exception as e:
-        print(f"[AutoModelMatcher] Index Refresh Error: {e}")
+        logger.error("Index Refresh Error: %s", e, exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
 
 @server.PromptServer.instance.routes.post("/auto-matcher/save-config")
@@ -117,7 +126,7 @@ async def save_config(request):
         searcher.save_config(data)
         return web.json_response({"status": "ok"})
     except Exception as e:
-        print(f"[AutoModelMatcher] Save Config Error: {e}")
+        logger.error("Save Config Error: %s", e, exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
 
 @server.PromptServer.instance.routes.post("/auto-matcher/validate-config")
@@ -128,7 +137,7 @@ async def validate_config(request):
         is_valid, msg = await searcher.validate_api_key(api_key)
         return web.json_response({"valid": is_valid, "message": msg})
     except Exception as e:
-        print(f"[AutoModelMatcher] Validate Config Error: {e}")
+        logger.error("Validate Config Error: %s", e, exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
 
 @server.PromptServer.instance.routes.get("/auto-matcher/get-config")
@@ -140,7 +149,7 @@ async def get_config(request):
         response_data["version"] = __version__
         return web.json_response(response_data)
     except Exception as e:
-        print(f"[AutoModelMatcher] Get Config Error: {e}")
+        logger.error("Get Config Error: %s", e, exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
 
 # 插件目录配置
@@ -151,3 +160,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {}
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
 
 print("\033[34m[AutoModelMatcher] \033[0mLoaded successfully with API support.")
+
+
