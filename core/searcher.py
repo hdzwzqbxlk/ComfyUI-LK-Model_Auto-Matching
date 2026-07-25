@@ -12,10 +12,10 @@ from parsel import Selector
 
 try:
     from .utils import AdvancedTokenizer
-    from .models_db import find_best_match_in_db
+    from .models_db_reader import find_best_match_in_db
 except ImportError:
     from utils import AdvancedTokenizer
-    from models_db import find_best_match_in_db
+    from models_db_reader import find_best_match_in_db
 
 class BaseProvider:
     def __init__(self, config=None):

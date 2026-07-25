@@ -1,0 +1,19 @@
+{
+  "db": {
+    "enabled": true,
+    "exact_score": 1.0,
+    "basename_score": 0.99,
+    "semantic_min_score": 0.35,
+    "fuzzy_score_cutoff": 80
+  },
+  "matching": {
+    "use_db_first": true,
+    "use_exact_match": true,
+    "use_fuzzy_match": true,
+    "use_variant_match": true,
+    "use_legacy_match": true,
+    "fuzzy_score_cutoff": 60.0,
+    "variant_score_cutoff": 0.9,
+    "legacy_score_cutoff": 75
+  }
+}

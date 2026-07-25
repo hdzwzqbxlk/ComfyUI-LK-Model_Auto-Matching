@@ -2,6 +2,12 @@ import sqlite3
 import os
 import json
 import logging
+import re
+
+try:
+    from .config import get_matcher_config
+except ImportError:
+    from config import get_matcher_config
 
 class ModelDatabase:
     """
@@ -64,6 +70,37 @@ class ModelDatabase:
             FOREIGN KEY(model_id) REFERENCES models(id)
         )
         ''')
+
+        # 4. External models table: stores entries imported from core/data/models_db.json
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS external_models (
+            filename_lower TEXT PRIMARY KEY,
+            repo_id TEXT,
+            path TEXT,
+            filename TEXT,
+            source TEXT,
+            normalized_name TEXT,
+            alias TEXT,
+            type TEXT,
+            base_model TEXT,
+            family TEXT,
+            tokens TEXT
+        )
+        ''')
+        # Handle older DB files that already have the old schema without the new columns
+        try:
+            columns = [row[1] for row in cursor.execute('PRAGMA table_info(external_models)')]
+            for col_name in ['normalized_name', 'alias', 'type', 'base_model', 'family', 'tokens']:
+                if col_name not in columns:
+                    cursor.execute(f'ALTER TABLE external_models ADD COLUMN {col_name} TEXT')
+        except Exception:
+            pass
+        conn.commit()
+        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_filename ON external_models(filename_lower)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_normalized ON external_models(normalized_name)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_alias ON external_models(alias)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_type ON external_models(type)')
+        conn.commit()
 
         conn.commit()
         conn.close()
@@ -237,6 +274,322 @@ class ModelDatabase:
             conn.rollback()
         finally:
             conn.close()
+
+    def import_models_db_json(self, json_path=None):
+        """Import core/data/models_db.json into external_models table."""
+        if json_path is None:
+            json_path = os.path.join(os.path.dirname(self.db_path), 'models_db.json')
+        if not os.path.exists(json_path):
+            print(f"[DB] models_db.json not found: {json_path}")
+            return 0
+
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                payload = json.load(f)
+        except Exception as e:
+            print(f"[DB] Error loading models_db.json: {e}")
+            return 0
+
+        models = payload.get('MODELS_DB', {})
+        if not models:
+            print("[DB] No MODELS_DB section in JSON")
+            return 0
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        inserted = 0
+        try:
+            for key, info in models.items():
+                filename_lower = key
+                repo_id = info.get('repo_id')
+                path = info.get('path')
+                filename = info.get('filename')
+                source = info.get('source')
+
+                # infer basic semantic fields
+                inferred_type = self._infer_type_from_filename(filename or key, repo_id or '')
+                inferred_base_model = self._infer_base_model(filename or key, repo_id or '')
+                inferred_family = self._infer_family(filename or key, repo_id or '')
+                normalized_name = self._normalize_model_name(filename or key)
+                alias = self._extract_alias(filename or key)
+                tokens = self._build_tokens(filename or key)
+
+                cursor.execute('''
+                INSERT OR REPLACE INTO external_models (
+                    filename_lower, repo_id, path, filename, source,
+                    normalized_name, alias, type, base_model, family, tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    filename_lower,
+                    repo_id,
+                    path,
+                    filename,
+                    source,
+                    normalized_name,
+                    alias,
+                    inferred_type,
+                    inferred_base_model,
+                    inferred_family,
+                    tokens,
+                ))
+                inserted += 1
+            conn.commit()
+            print(f"[DB] Imported {inserted} external_models from {json_path}")
+        except Exception as e:
+            print(f"[DB] Import failed: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+        return inserted
+
+    def lookup_modelsdb(self, filename, expected_types=None):
+        """Lookup filename in external_models table.
+        Returns (info_dict, score) or (None, 0)
+        Strategy: exact filename_lower -> config score; basename match -> config score; semantic token overlap -> config threshold; fuzzy fallback
+        """
+        cfg = get_matcher_config().get('db', {})
+        if not cfg.get('enabled', True):
+            return (None, 0)
+
+        if not filename:
+            return (None, 0)
+        base = os.path.basename(filename)
+        base_lower = base.lower()
+        base_no_ext = os.path.splitext(base_lower)[0]
+
+        target_tokens = self._tokenize_text(base_no_ext)
+        target_alias = self._extract_alias(base_no_ext)
+        target_normalized = self._normalize_search_text(base_no_ext)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+            SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
+            FROM external_models WHERE filename_lower = ?
+            ''', (base_lower,))
+            row = cursor.fetchone()
+            if row:
+                info = self._row_to_info(row)
+                if expected_types and info.get('type') not in expected_types and info.get('type') != 'unknown':
+                    pass
+                else:
+                    return (_enrich_external_info(info), cfg.get('exact_score', 1.0))
+
+            cursor.execute('''
+            SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
+            FROM external_models WHERE filename_lower = ?
+            ''', (base_no_ext,))
+            row = cursor.fetchone()
+            if row:
+                info = self._row_to_info(row)
+                if expected_types and info.get('type') not in expected_types and info.get('type') != 'unknown':
+                    pass
+                else:
+                    return (_enrich_external_info(info), cfg.get('basename_score', 0.99))
+
+            cursor.execute('''
+            SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
+            FROM external_models
+            ''')
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        best_info = None
+        best_score = 0.0
+        for row in rows or []:
+            info = self._row_to_info(row)
+            if expected_types and info.get('type') not in expected_types and info.get('type') != 'unknown':
+                continue
+
+            score = 0.0
+            if target_alias and info.get('alias') and target_alias == info.get('alias'):
+                score += 0.25
+            if info.get('normalized_name'):
+                cand_tokens = self._tokenize_text(info.get('normalized_name'))
+                if cand_tokens:
+                    overlap = len(set(target_tokens) & set(cand_tokens))
+                    union = len(set(target_tokens) | set(cand_tokens))
+                    if union:
+                        score += (overlap / union) * 0.6
+            if info.get('tokens'):
+                cand_tokens = self._tokenize_text(info.get('tokens'))
+                if cand_tokens:
+                    overlap = len(set(target_tokens) & set(cand_tokens))
+                    union = len(set(target_tokens) | set(cand_tokens))
+                    if union:
+                        score += (overlap / union) * 0.2
+            if target_normalized and info.get('filename'):
+                candidate_normalized = self._normalize_search_text(info.get('filename'))
+                if candidate_normalized:
+                    if target_normalized == candidate_normalized:
+                        score += 0.2
+                    elif target_normalized in candidate_normalized or candidate_normalized in target_normalized:
+                        score += 0.15
+            if info.get('base_model') and info.get('base_model') != 'Unknown':
+                if target_tokens and info.get('base_model').lower() in ' '.join(target_tokens):
+                    score += 0.1
+            if score > best_score and score >= cfg.get('semantic_min_score', 0.35):
+                best_score = score
+                best_info = info
+
+        if best_info:
+            return (_enrich_external_info(best_info), best_score)
+
+        try:
+            from rapidfuzz import fuzz, process
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute('SELECT filename_lower FROM external_models')
+                keys = [r[0] for r in cursor.fetchall()]
+                if keys:
+                    res = process.extractOne(base_lower, keys, scorer=fuzz.token_set_ratio)
+                    if res and res[1] >= cfg.get('fuzzy_score_cutoff', 85):
+                        matched_key = res[0]
+                        cursor.execute('''
+                        SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
+                        FROM external_models WHERE filename_lower = ?
+                        ''', (matched_key,))
+                        row = cursor.fetchone()
+                        if row:
+                            info = self._row_to_info(row)
+                            if not expected_types or info.get('type') in expected_types or info.get('type') == 'unknown':
+                                return (_enrich_external_info(info), res[1] / 100)
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+        return (None, 0)
+
+    def _tokenize_text(self, value):
+        if not value:
+            return set()
+        tokenized = []
+        text = os.path.basename(str(value))
+        text = text.replace('_', ' ').replace('-', ' ').replace('.', ' ')
+        for part in re.split(r'\s+', text.lower()):
+            if part:
+                tokenized.append(part)
+        return set(tokenized)
+
+    def _normalize_search_text(self, value):
+        if not value:
+            return ''
+        text = os.path.basename(str(value)).lower()
+        text = re.sub(r'[_\-\.\s]+', '', text)
+        return text
+
+    def _row_to_info(self, row):
+        return {
+            'repo_id': row[0],
+            'path': row[1],
+            'filename': row[2],
+            'source': row[3],
+            'normalized_name': row[4],
+            'alias': row[5],
+            'type': row[6],
+            'base_model': row[7],
+            'family': row[8],
+            'tokens': row[9],
+        }
+
+    def _infer_type_from_filename(self, filename, repo_id=''):
+        lower = (filename or '').lower()
+        if 'lora' in lower or 'loras' in lower:
+            return 'lora'
+        if 'vae' in lower:
+            return 'vae'
+        if 'controlnet' in lower:
+            return 'controlnet'
+        if 'upscaler' in lower or 'esrgan' in lower or 'swinir' in lower or 'upscale' in lower:
+            return 'upscale_model'
+        if 'clip' in lower or 'text_encoder' in lower:
+            return 'clip'
+        if 'unet' in lower:
+            return 'unet'
+        if 'embedding' in lower:
+            return 'embeddings'
+        if 'gguf' in lower:
+            return 'checkpoint'
+        return 'checkpoint'
+
+    def _infer_base_model(self, filename, repo_id=''):
+        lower = (filename or '').lower()
+        if 'sdxl' in lower or 'stable diffusion xl' in lower:
+            return 'SDXL'
+        if 'sd3' in lower:
+            return 'SD3'
+        if 'flux' in lower:
+            return 'Flux'
+        if 'wan' in lower:
+            return 'Wan'
+        if 'qwen' in lower:
+            return 'Qwen'
+        if 'pony' in lower:
+            return 'Pony'
+        if 'hunyuan' in lower:
+            return 'Hunyuan'
+        return 'Unknown'
+
+    def _infer_family(self, filename, repo_id=''):
+        lower = (filename or '').lower()
+        if 'wan' in lower:
+            return 'Wan'
+        if 'flux' in lower:
+            return 'Flux'
+        if 'qwen' in lower:
+            return 'Qwen'
+        if 'sdxl' in lower:
+            return 'SDXL'
+        if 'sd3' in lower:
+            return 'SD3'
+        if 'pony' in lower:
+            return 'Pony'
+        if 'hunyuan' in lower:
+            return 'Hunyuan'
+        return 'General'
+
+    def _normalize_model_name(self, value):
+        name = os.path.basename(value or '')
+        name = os.path.splitext(name)[0]
+        name = name.replace('_', ' ').replace('-', ' ').replace('.', ' ')
+        name = re.sub(r'\s+', ' ', name).strip().lower()
+        return name
+
+    def _extract_alias(self, value):
+        name = os.path.basename(value or '')
+        base = os.path.splitext(name)[0].lower()
+        if base.startswith('wan2_1'):
+            return 'wan2.1'
+        if base.startswith('wan2_2'):
+            return 'wan2.2'
+        if 'flux1' in base:
+            return 'flux1'
+        if 'sdxl' in base:
+            return 'sdxl'
+        return None
+
+    def _build_tokens(self, value):
+        name = os.path.basename(value or '')
+        base = os.path.splitext(name)[0]
+        tokens = []
+        for part in re.split(r'[_\-\.\s]+', base.lower()):
+            if part:
+                tokens.append(part)
+        return ' '.join(tokens)
+
+
+def _enrich_external_info(info):
+    new_info = info.copy()
+    repo_id = info.get('repo_id')
+    path = info.get('path')
+    if repo_id and path:
+        new_info['url'] = f"https://huggingface.co/{repo_id}/resolve/main/{path}"
+        new_info['pageUrl'] = f"https://huggingface.co/{repo_id}/tree/main"
+    return new_info
 
 # 单例实例
 db = ModelDatabase()

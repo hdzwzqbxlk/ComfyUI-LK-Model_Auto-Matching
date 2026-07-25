@@ -1,6 +1,11 @@
 import difflib
 import os
 try:
+    from .config import get_matcher_config
+except ImportError:
+    from config import get_matcher_config
+
+try:
     from .utils import AdvancedTokenizer
 except ImportError:
     from utils import AdvancedTokenizer
@@ -8,6 +13,7 @@ except ImportError:
 class ModelMatcher:
     def __init__(self, scanner):
         self.scanner = scanner
+        self.config = get_matcher_config()
         # 倒排索引: {token: set(model_indices)}
         self.inverted_index = {}
         self.model_list = [] # List storing actual model info, referenced by index
@@ -140,42 +146,70 @@ class ModelMatcher:
             
             best_match = None
             match_type = "Unknown"
-            
-            # 1. Exact Match
-            exact = self._find_exact_match(item_ctx, ctx)
-            if exact:
-                best_match = exact
-                match_type = "Exact"
-            
+
+            matching_cfg = self.config.get('matching', {})
+            db_cfg = self.config.get('db', {})
+
+            # DB-first lookup: try SQLite external_models if available
+            if matching_cfg.get('use_db_first', True):
+                try:
+                    from .database import db
+                    db_match, db_score = db.lookup_modelsdb(
+                        current_val,
+                        expected_types=item_ctx['expected_types']
+                    )
+                    if db_match and db_score >= db_cfg.get('semantic_min_score', 0.35):
+                        # quick conflict/type check
+                        if not self._check_conflicts(current_val, db_match.get('filename', '')):
+                            cand_type = db_match.get('type', 'unknown')
+                            expected_types = item_ctx['expected_types']
+                            if not expected_types or cand_type in expected_types or cand_type == 'unknown':
+                                best_match = db_match
+                                match_type = "DB"
+                except Exception:
+                    # DB not available or error -> fallback to existing logic
+                    pass
+             
+            # 1. Exact Match (fallback to in-memory index)
+            if not best_match and matching_cfg.get('use_exact_match', True):
+                exact = self._find_exact_match(item_ctx, ctx)
+                if exact:
+                    best_match = exact
+                    match_type = "Exact"
+             
             # 2. Fuzzy Match
-            if not best_match:
+            if not best_match and matching_cfg.get('use_fuzzy_match', True):
                 fuzzy = self._find_fuzzy_match(item_ctx)
                 if fuzzy:
                     best_match = fuzzy
                     match_type = "Fuzzy"
-            
+             
             # 3. Variant Match
-            if not best_match:
+            if not best_match and matching_cfg.get('use_variant_match', True):
                 variant = self._find_variant_match(item_ctx)
                 if variant:
                     best_match = variant
                     match_type = "Variant"
-            
+             
             # 4. Legacy Match
-            if not best_match:
+            if not best_match and matching_cfg.get('use_legacy_match', True):
                 legacy = self._find_legacy_match(item_ctx, ctx)
                 if legacy:
                     best_match = legacy
                     match_type = "Fuzzy" # Legacy is technically fuzzy
 
             if best_match:
+                # ensure path/filename keys exist
+                matched_filename = best_match.get("filename") or os.path.basename(best_match.get("path", ""))
+                matched_path = best_match.get("path", matched_filename)
+
                 matches.append({
                     "id": item["id"],
                     "node_type": item["node_type"],
                     "widget_name": item["widget_name"],
                     "original_value": current_val,
-                    "matched_value": os.path.normpath(best_match["filename"]),
-                    "path": os.path.normpath(best_match["path"]),
+                    "matched_value": os.path.normpath(matched_filename),
+                    "path": os.path.normpath(matched_path),
                     "match_type": match_type,
                     "type": best_match.get("type", "unknown")
                 })
@@ -395,7 +429,7 @@ class ModelMatcher:
                 best_score = final_score
                 best_candidate = info
         
-        if best_score >= 60.0:
+        if best_score >= self.config.get('matching', {}).get('fuzzy_score_cutoff', 60.0):
             return best_candidate
         return None
 
@@ -449,7 +483,7 @@ class ModelMatcher:
                 best_score = core_score
                 best_candidate = info
         
-        if best_score >= 0.9:
+        if best_score >= self.config.get('matching', {}).get('variant_score_cutoff', 0.9):
             return best_candidate
         return None
 
@@ -475,7 +509,7 @@ class ModelMatcher:
             target_base, 
             available_names, 
             scorer=fuzz.token_set_ratio, 
-            score_cutoff=75
+            score_cutoff=self.config.get('matching', {}).get('legacy_score_cutoff', 75)
         )
         
         if match:
