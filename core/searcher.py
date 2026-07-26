@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import urllib.parse
 import os
 import json
@@ -9,6 +10,8 @@ import time
 import uuid
 from curl_cffi.requests import AsyncSession
 from parsel import Selector
+
+logger = logging.getLogger(__name__)
 
 try:
     from .utils import AdvancedTokenizer
@@ -65,7 +68,7 @@ class CivitaiHashProvider(BaseProvider):
     async def search_by_hash(self, file_path: str, original_filename: str):
         """Search Civitai by SHA256"""
         if getattr(self, "circuit_open", False):
-            print(f"[CivitaiProvider] Circuit Open (Blocking skipped)")
+            logger.warning(f"[CivitaiProvider] Circuit Open (Blocking skipped)")
             await asyncio.sleep(0) # Yield
             return None
 
@@ -80,7 +83,7 @@ class CivitaiHashProvider(BaseProvider):
                 self.error_count = getattr(self, "error_count", 0) + 1
                 if self.error_count >= 3:
                     self.circuit_open = True
-                    print(f"[CivitaiProvider] 403 limit reached. Disabling Civitai for this session.")
+                    logger.warning(f"[CivitaiProvider] 403 limit reached. Disabling Civitai for this session.")
             return None
         """
         通过文件哈希精确匹配 Civitai 模型
@@ -95,7 +98,7 @@ class CivitaiHashProvider(BaseProvider):
         results = []
         
         if not os.path.exists(file_path):
-            print(f"[CivitaiHash] File not found: {file_path}")
+            logger.warning(f"[CivitaiHash] File not found: {file_path}")
             return results
         
         try:
@@ -103,11 +106,11 @@ class CivitaiHashProvider(BaseProvider):
             if file_path in self._hash_cache:
                 file_hash = self._hash_cache[file_path]
             else:
-                print(f"[CivitaiHash] Calculating SHA256 for: {original_filename}")
+                logger.debug(f"[CivitaiHash] Calculating SHA256 for: {original_filename}")
                 # [Optimization] Run hashing in a separate thread to avoid blocking the Event Loop
                 file_hash = await asyncio.to_thread(self.calculate_sha256, file_path)
                 self._hash_cache[file_path] = file_hash
-                print(f"[CivitaiHash] Hash: {file_hash[:16]}...")
+                logger.debug(f"[CivitaiHash] Hash: {file_hash[:16]}...")
             
             # [v3.0.3] 调用 Civitai API - 添加 Origin/Referer 绕过 Cloudflare
             headers = self._get_headers("https://civitai.com")
@@ -117,9 +120,9 @@ class CivitaiHashProvider(BaseProvider):
             token = self.config.get("civitai_api_key")
             if token:
                 headers["Authorization"] = f"Bearer {token}"
-                print(f"[CivitaiHash] Using API Key: {token[:8]}...")
+                logger.debug(f"[CivitaiHash] Using API Key: {token[:8]}...")
             else:
-                print(f"[CivitaiHash] Warning: No API Key configured")
+                logger.warning(f"[CivitaiHash] Warning: No API Key configured")
 
             
             url = f"{self.api_url}/{file_hash}"
@@ -151,18 +154,18 @@ class CivitaiHashProvider(BaseProvider):
                             "hash_match": True
                         })
                         
-                        print(f"[CivitaiHash] ✓ Exact match found: {model_name}")
+                        logger.info(f"[CivitaiHash] ✓ Exact match found: {model_name}")
                         
                     except Exception as e:
-                        print(f"[CivitaiHash] Parse error: {e}")
+                        logger.exception(f"[CivitaiHash] Parse error: {e}")
                         
                 elif response.status_code == 404:
-                    print(f"[CivitaiHash] No match for hash (model may not be from Civitai)")
+                    logger.info(f"[CivitaiHash] No match for hash (model may not be from Civitai)")
                 else:
-                    print(f"[CivitaiHash] API returned {response.status_code}")
+                    logger.warning(f"[CivitaiHash] API returned {response.status_code}")
                     
         except Exception as e:
-            print(f"[CivitaiHash] Error: {e}")
+            logger.exception(f"[CivitaiHash] Error: {e}")
         
         return results
 
@@ -176,7 +179,7 @@ class CivitaiProvider(BaseProvider):
     async def search(self, query, original_filename):
         results = []
         try:
-            print(f"[CivitaiProvider] Searching API for: {query}")
+            logger.debug(f"[CivitaiProvider] Searching API for: {query}")
             headers = self._get_headers("https://civitai.com")
             
             # [Fix] Add Origin/Referer to satisfy Cloudflare/Anti-bot checks
@@ -187,7 +190,7 @@ class CivitaiProvider(BaseProvider):
             if token:
                 headers["Authorization"] = f"Bearer {token}"
                 # Log that key is being used (masked)
-                print(f"[CivitaiProvider] Authenticated search (Key ends found)")
+                logger.debug(f"[CivitaiProvider] Authenticated search (Key ends found)")
 
             encoded_query = urllib.parse.quote(query)
             # Fetch more results to increase hit rate
@@ -196,10 +199,10 @@ class CivitaiProvider(BaseProvider):
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.get(url)
                 if response.status_code != 200: 
-                    print(f"[CivitaiProvider] API Error {response.status_code} (Check API Key or Network)")
+                    logger.error(f"[CivitaiProvider] API Error {response.status_code} (Check API Key or Network)")
                     # Detailed debug for 403
                     if response.status_code == 403:
-                        print(f"[CivitaiProvider] 403 Forbidden. Headers sent: {headers.keys()}")
+                        logger.warning(f"[CivitaiProvider] 403 Forbidden. Headers sent: {headers.keys()}")
                     return []
                 
                 try:
@@ -244,7 +247,7 @@ class CivitaiProvider(BaseProvider):
                                     "score": final_score
                                 })
         except Exception as e:
-            print(f"[CivitaiProvider] Error: {e}")
+            logger.exception(f"[CivitaiProvider] Error: {e}")
         return results
 
 class HuggingFaceProvider(BaseProvider):
@@ -255,7 +258,7 @@ class HuggingFaceProvider(BaseProvider):
     async def search(self, query, original_filename):
         results = []
         try:
-            print(f"[HFProvider] Searching API for: {query}")
+            logger.debug(f"[HFProvider] Searching API for: {query}")
             headers = self._get_headers("https://huggingface.co")
             encoded_query = urllib.parse.quote(query)
             url = f"{self.api_url}?search={encoded_query}&limit=20"
@@ -290,7 +293,7 @@ class HuggingFaceProvider(BaseProvider):
                             "score": final_score
                         })
         except Exception as e:
-            print(f"[HFProvider] Error: {e}")
+            logger.exception(f"[HFProvider] Error: {e}")
         return results
 
 class HuggingFaceFileSearchProvider(BaseProvider):
@@ -386,7 +389,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         # 特殊处理 LoRA
         is_lora = any('lora' in k.lower() for k in keywords)
         
-        print(f"[SmartDiscovery] Searching repos for: '{search_query}'")
+        logger.debug(f"[SmartDiscovery] Searching repos for: '{search_query}'")
         
         discovered_repos = []
         try:
@@ -405,9 +408,9 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                         
                     discovered_repos.append(repo_id)
         except Exception as e:
-            print(f"[SmartDiscovery] Error: {e}")
+            logger.exception(f"[SmartDiscovery] Error: {e}")
             
-        print(f"[SmartDiscovery] Found {len(discovered_repos)} candidates: {discovered_repos}")
+        logger.info(f"[SmartDiscovery] Found {len(discovered_repos)} candidates: {discovered_repos}")
         return discovered_repos
 
     async def search(self, query, original_filename):
@@ -448,18 +451,18 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                             result = await coro
                             if result and result.get("score", 0) >= 0.9:
                                 elapsed = time.time() - start_time
-                                print(f"[SmartMatch] Found high confidence match in {elapsed:.2f}s")
+                                logger.info(f"[SmartMatch] Found high confidence match in {elapsed:.2f}s")
                                 return [result]
                             elif result:
                                 results.append(result)
                         except Exception as e:
-                            print(f"[SmartMatch] Task error: {e}")
+                            logger.exception(f"[SmartMatch] Task error: {e}")
                             
         except Exception as e:
-            print(f"[SearchError] {e}")
+            logger.exception(f"[SearchError] {e}")
             
         elapsed = time.time() - start_time
-        print(f"[Search] Completed in {elapsed:.2f}s, found {len(results)} results")
+        logger.info(f"[Search] Completed in {elapsed:.2f}s, found {len(results)} results")
         return sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:3]
     
     async def _scan_repo_concurrent(self, session, model_id, keywords, original_filename):
@@ -538,7 +541,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             return self._search_in_tree(tree, model_id, keywords, original_filename)
             
         except Exception as e:
-            print(f"[HFOptimized] Repo scan error for {model_id}: {e}")
+            logger.exception(f"[HFOptimized] Repo scan error for {model_id}: {e}")
             return None
     
     async def _get_dir_files(self, session, model_id, dir_path, depth=0):
@@ -573,7 +576,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
                         result[dir_path]["dirs"].update(sr)
                         
         except Exception as e:
-            print(f"[HFOptimized] Dir error {dir_path}: {e}")
+            logger.exception(f"[HFOptimized] Dir error {dir_path}: {e}")
         
         return result
     
@@ -616,7 +619,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             
             # [Debug]
             if p_score > 50 or t_score > 50:
-                print(f"  [AlgoDebug] '{file_base}' vs '{original_base}' -> P:{p_score}, T:{t_score}")
+                logger.debug(f"  [AlgoDebug] '{file_base}' vs '{original_base}' -> P:{p_score}, T:{t_score}")
             
             # 如果分数非常高，直接通过
             if p_score >= 90 or t_score >= 95:
@@ -745,9 +748,9 @@ class ModelScopeFileSearchProvider(BaseProvider):
         # Deduplicate terms
         search_terms = list(dict.fromkeys(search_terms))
         
-        print(f"[ModelScope] Searching Repos for: {search_terms[:2]}")
+        logger.debug(f"[ModelScope] Searching Repos for: {search_terms[:2]}")
         if priority_target_repos:
-             print(f"[ModelScope] Adding Priority Repos: {priority_target_repos}")
+             logger.debug(f"[ModelScope] Adding Priority Repos: {priority_target_repos}")
         
         search_url = f"{self.api_url}/dolphin/models"
         headers = self._get_headers(referer="https://modelscope.cn/models")
@@ -790,7 +793,7 @@ class ModelScopeFileSearchProvider(BaseProvider):
                         if target_repos: break # Found something using this term
                         
                     except Exception as exc:
-                        print(f"[ModelScope] Search term '{term}' failed: {exc}")
+                        logger.exception(f"[ModelScope] Search term '{term}' failed: {exc}")
                         continue
 
                 # [v3.5.1] Merge Priority Repos (High Priority first)
@@ -813,14 +816,14 @@ class ModelScopeFileSearchProvider(BaseProvider):
                     start_time = time.time()
                     repo_results = await asyncio.gather(*tasks)
                     elapsed = time.time() - start_time
-                    print(f"[ModelScope] Scanned {len(tasks)} repos in {elapsed:.2f}s")
+                    logger.info(f"[ModelScope] Scanned {len(tasks)} repos in {elapsed:.2f}s")
                     
                     for res_list in repo_results:
                         if res_list:
                             results.extend(res_list)
                             
         except Exception as e:
-            print(f"[ModelScope] Error: {e}")
+            logger.exception(f"[ModelScope] Error: {e}")
             
         return sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:5]
 
@@ -841,7 +844,7 @@ class ModelScopeFileSearchProvider(BaseProvider):
             files = await self._fetch_file_tree(session, repo_id)
             
         if not files:
-            print(f"[ModelScope] No files found in {repo_id}")
+            logger.debug(f"[ModelScope] No files found in {repo_id}")
             return []
         
         # Match Files
@@ -908,7 +911,7 @@ class ModelScopeFileSearchProvider(BaseProvider):
                         self._tree_cache[repo_id] = {"files": files, "ts": time.time()}
                         return files
             except Exception as e:
-                print(f"[ModelScope] Tree fetch error {repo_id} ({rev}): {e}")
+                logger.exception(f"[ModelScope] Tree fetch error {repo_id} ({rev}): {e}")
                 
         return []
 
@@ -927,7 +930,7 @@ class GoogleOmniProvider(BaseProvider):
             sites_or_keywords = "liblib OR shakker OR civitai OR huggingface OR modelscope OR cnb.cool"
             full_query = f"{query} ({sites_or_keywords})"
             
-            print(f"[GoogleOmni] Searching: {full_query}")
+            logger.debug(f"[GoogleOmni] Searching: {full_query}")
             
             encoded_query = urllib.parse.quote(full_query)
             url = f"https://www.google.com/search?q={encoded_query}&num=20&hl=en"
@@ -982,7 +985,7 @@ class GoogleOmniProvider(BaseProvider):
                     except: pass
                             
         except Exception as e:
-            print(f"[GoogleOmni] Error: {e}")
+            logger.exception(f"[GoogleOmni] Error: {e}")
         return results
 
     def _parse_link(self, url, original_lower):
@@ -1040,7 +1043,7 @@ class LiblibProvider(BaseProvider):
     async def search(self, query, original_filename):
         results = []
         try:
-            print(f"[LiblibProvider] Searching: {query}")
+            logger.debug(f"[LiblibProvider] Searching: {query}")
             
             encoded_query = urllib.parse.quote(query)
             url = f"{self.search_url}?keyword={encoded_query}"
@@ -1050,7 +1053,7 @@ class LiblibProvider(BaseProvider):
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.get(url)
                 if response.status_code != 200:
-                    print(f"[LiblibProvider] Status {response.status_code}")
+                    logger.warning(f"[LiblibProvider] Status {response.status_code}")
                     return []
                 
                 html = response.text
@@ -1090,7 +1093,7 @@ class LiblibProvider(BaseProvider):
                         })
                         
         except Exception as e:
-            print(f"[LiblibProvider] Error: {e}")
+            logger.exception(f"[LiblibProvider] Error: {e}")
         return results
 
 class DuckDuckGoProvider(BaseProvider):
@@ -1109,7 +1112,7 @@ class DuckDuckGoProvider(BaseProvider):
             sites = "liblib OR shakker OR civitai OR huggingface OR modelscope OR cnb.cool"
             full_query = f"{query} ({sites})"
             
-            print(f"[DuckDuckGo] Searching: {full_query}")
+            logger.debug(f"[DuckDuckGo] Searching: {full_query}")
             
             url = "https://html.duckduckgo.com/html/"
             data = {"q": full_query}
@@ -1124,7 +1127,7 @@ class DuckDuckGoProvider(BaseProvider):
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
                 response = await session.post(url, data=data)
                 if response.status_code != 200: 
-                    print(f"[DuckDuckGo] Status {response.status_code}")
+                    logger.warning(f"[DuckDuckGo] Status {response.status_code}")
                     return []
                 
                 html = response.text
@@ -1148,7 +1151,7 @@ class DuckDuckGoProvider(BaseProvider):
                         results.append(meta)
                             
         except Exception as e:
-            print(f"[DuckDuckGo] Error: {e}")
+            logger.exception(f"[DuckDuckGo] Error: {e}")
         return results
 
     def _parse_link(self, url, original_lower):
@@ -1253,7 +1256,7 @@ class CNBProvider(BaseProvider):
                             if len(results) >= 5: break
                             
         except Exception as e:
-            print(f"[CNBProvider] Error: {e}")
+            logger.exception(f"[CNBProvider] Error: {e}")
             
         return results
 
@@ -1327,11 +1330,11 @@ class ModelSearcher:
         # [Strict Filter] Verify extension
         from .scanner import is_valid_model_file
         if not is_valid_model_file(filename):
-            print(f"[AutoMatch] Skipped non-model file: {filename}")
+            logger.debug(f"[AutoMatch] Skipped non-model file: {filename}")
             return None
         
         if not ignore_cache and filename in self.search_cache:
-            print(f"[AutoMatch] Cache Hit: {filename}")
+            logger.debug(f"[AutoMatch] Cache Hit: {filename}")
             return self.search_cache[filename]
         
         # [v3.0.1] 优先尝试 SHA256 哈希匹配 (100% 精确)
@@ -1340,11 +1343,11 @@ class ModelSearcher:
                 hash_results = await self.hash_provider.search_by_hash(file_path, filename)
                 if hash_results:
                     best = hash_results[0]
-                    print(f"[AutoMatch] ✓ Hash Match: {best['name']} (100% accurate)")
+                    logger.info(f"[AutoMatch] ✓ Hash Match: {best['name']} (100% accurate)")
                     self.search_cache[filename] = best
                     return best
             except Exception as e:
-                print(f"[AutoMatch] Hash search failed: {e}")
+                logger.exception(f"[AutoMatch] Hash search failed: {e}")
 
         # [v3.5.1] Step 1: Normalize filename via Local DB & Popular Aliases
         # Instead of returning immediately, we use this for cross-provider resolution.
@@ -1400,7 +1403,7 @@ class ModelSearcher:
             ]
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers
-            print(f"[AutoMatch] 中文模型 -> 优先 Liblib/ModelScope/CNB")
+            logger.debug(f"[AutoMatch] 中文模型 -> 优先 Liblib/ModelScope/CNB")
         elif bool(re_module.search(r'(wan|qwen)', base_name, re_module.IGNORECASE)):
             # [v3.5.0] Wan/Qwen (国产优选) -> 优先 ModelScope/CNB
             priority_providers = [
@@ -1409,7 +1412,7 @@ class ModelSearcher:
             ]
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers
-            print(f"[AutoMatch] Wan/Qwen (国产) -> 优先 ModelScope/CNB")
+            logger.debug(f"[AutoMatch] Wan/Qwen (国产) -> 优先 ModelScope/CNB")
         elif bool(re_module.search(r'(flux|ltx|z[-_]?image)', base_name, re_module.IGNORECASE)):
             # GRAVITY-NOTE: Flux 等国际模型 -> 优先 HuggingFace
             priority_providers = [
@@ -1418,14 +1421,14 @@ class ModelSearcher:
             ]
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers
-            print(f"[AutoMatch] FLUX/Global -> 优先 HuggingFace")
-            print(f"[AutoMatch] FLUX/Wan/Qwen 系列 -> 优先 HuggingFace")
+            logger.debug(f"[AutoMatch] FLUX/Global -> 优先 HuggingFace")
+            logger.debug(f"[AutoMatch] FLUX/Wan/Qwen 系列 -> 优先 HuggingFace")
         else:
             ordered_providers = self.providers
         
         # 只使用最优搜索词，所有 Provider 同时启动
         best_term = search_terms[0] if search_terms else base_name
-        print(f"[AutoMatch] Searching: {filename} | Term: {best_term}")
+        logger.info(f"[AutoMatch] Searching: {filename} | Term: {best_term}")
         
         import time
         start_time = time.time()
@@ -1446,14 +1449,14 @@ class ModelSearcher:
                     all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
                     if all_candidates and all_candidates[0].get("score", 0) >= 0.7:
                         elapsed = time.time() - start_time
-                        print(f"[AutoMatch] Fast match in {elapsed:.2f}s: {all_candidates[0]['name']}")
+                        logger.info(f"[AutoMatch] Fast match in {elapsed:.2f}s: {all_candidates[0]['name']}")
                         break
                         
             except Exception as e:
-                print(f"[AutoMatch] Provider task failed: {e}")
+                logger.exception(f"[AutoMatch] Provider task failed: {e}")
         
         elapsed = time.time() - start_time
-        print(f"[AutoMatch] Completed in {elapsed:.2f}s")
+        logger.info(f"[AutoMatch] Completed in {elapsed:.2f}s")
         
         # Final Sort and Deduplication
         all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -1471,14 +1474,14 @@ class ModelSearcher:
         # [v3.5.1] If no high-score hit found online, check if we have a DB fallback
         if not best_match or best_match.get("score", 0) < 0.85:
             if db_fallback_result:
-                print(f"[AutoMatch] Returning DB fallback: {db_fallback_result['name']}")
+                logger.info(f"[AutoMatch] Returning DB fallback: {db_fallback_result['name']}")
                 best_match = db_fallback_result
 
         if best_match:
-            print(f"[AutoMatch] Match Found: {best_match['name']} ({best_match['source']}) Score: {best_match.get('score', 0):.2f}")
+            logger.info(f"[AutoMatch] Match Found: {best_match['name']} ({best_match['source']}) Score: {best_match.get('score', 0):.2f}")
             self.search_cache[filename] = best_match
             return [best_match]
         else:
-            print(f"[AutoMatch] No match for: {filename}")
+            logger.info(f"[AutoMatch] No match for: {filename}")
             self.search_cache[filename] = None
             return []

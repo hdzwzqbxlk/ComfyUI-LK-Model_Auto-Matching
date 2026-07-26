@@ -4,6 +4,8 @@ import json
 import logging
 import re
 
+logger = logging.getLogger(__name__)
+
 try:
     from .config import get_matcher_config
 except ImportError:
@@ -214,14 +216,14 @@ class ModelDatabase:
         """从 models_data.json 迁移数据到数据库 (Phase 2 Migration)"""
         json_path = os.path.join(os.path.dirname(self.db_path), 'models_data.json')
         if not os.path.exists(json_path):
-            print(f"[DB] JSON data file not found: {json_path}")
+            logger.warning(f"[DB] JSON data file not found: {json_path}")
             return
 
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            print(f"[DB] Error loading JSON: {e}")
+            logger.exception(f"[DB] Error loading JSON: {e}")
             return
 
         conn = self._get_connection()
@@ -281,10 +283,10 @@ class ModelDatabase:
                     added_aliases += 1
 
             conn.commit()
-            print(f"[DB] Migration complete. Added {added_models} models and {added_aliases} aliases.")
+            logger.info(f"[DB] Migration complete. Added {added_models} models and {added_aliases} aliases.")
             
         except Exception as e:
-            print(f"[DB] Migration failed: {e}")
+            logger.exception(f"[DB] Migration failed: {e}")
             conn.rollback()
         finally:
             conn.close()
@@ -294,19 +296,19 @@ class ModelDatabase:
         if json_path is None:
             json_path = os.path.join(os.path.dirname(self.db_path), 'models_db.json')
         if not os.path.exists(json_path):
-            print(f"[DB] models_db.json not found: {json_path}")
+            logger.warning(f"[DB] models_db.json not found: {json_path}")
             return 0
 
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
                 payload = json.load(f)
         except Exception as e:
-            print(f"[DB] Error loading models_db.json: {e}")
+            logger.exception(f"[DB] Error loading models_db.json: {e}")
             return 0
 
         models = payload.get('MODELS_DB', {})
         if not models:
-            print("[DB] No MODELS_DB section in JSON")
+            logger.warning("[DB] No MODELS_DB section in JSON")
             return 0
 
         conn = self._get_connection()
@@ -348,9 +350,9 @@ class ModelDatabase:
                 ))
                 inserted += 1
             conn.commit()
-            print(f"[DB] Imported {inserted} external_models from {json_path}")
+            logger.info(f"[DB] Imported {inserted} external_models from {json_path}")
         except Exception as e:
-            print(f"[DB] Import failed: {e}")
+            logger.exception(f"[DB] Import failed: {e}")
             conn.rollback()
         finally:
             conn.close()

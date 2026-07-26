@@ -1,5 +1,8 @@
+import logging
 import re
 import os
+
+logger = logging.getLogger(__name__)
 
 # 尝试导入 rapidfuzz (高性能模糊匹配库)
 from rapidfuzz import fuzz as rf_fuzz
@@ -23,7 +26,7 @@ def load_models_data():
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            print(f"[ModelMatcher] Error loading models_data.json: {e}")
+            logger.exception(f"[ModelMatcher] Error loading models_data.json: {e}")
     
     return data
 
@@ -528,7 +531,7 @@ class AdvancedTokenizer:
                             if short_smart.lower() != smart_stem.lower() and len(short_smart) > 3:
                                 search_terms.insert(0, short_smart)
         except Exception as e:
-            print(f"[Tokenizer] Smart split error: {e}")
+            logger.exception(f"[Tokenizer] Smart split error: {e}")
 
         # === 特殊处理：GGUF 文件 ===
         # GGUF 仓库命名规则：通常是 "模型名-GGUF"，如 "Qwen-Image-Edit-2511-GGUF"

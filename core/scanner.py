@@ -1,8 +1,11 @@
+import logging
 import os
 import hashlib
 import json
 import time
 import folder_paths
+
+logger = logging.getLogger(__name__)
 
 # 定义要扫描的模型类型 (对应 folder_paths 中的 key，对齐 ComfyUI 最新官方规范)
 MODEL_TYPES = {
@@ -69,19 +72,19 @@ class ModelIndex:
                         
                         # 若清理了已删除的记录，自动写回索引镜像文件
                         if removed_count > 0:
-                            print(f"[AutoMatch] Cleaned {removed_count} deleted model entries from index.")
+                            logger.info(f"[AutoMatch] Cleaned {removed_count} deleted model entries from index.")
                             self.save_index()
                     else:
-                        print("[AutoMatch] Index version mismatch, rebuilding...")
+                        logger.warning("[AutoMatch] Index version mismatch, rebuilding...")
             except Exception as e:
-                print(f"[AutoMatch] Failed to load index: {e}")
+                logger.exception(f"[AutoMatch] Failed to load index: {e}")
 
     def save_index(self):
         try:
             with open(self.index_file, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[AutoMatch] Failed to save index: {e}")
+            logger.exception(f"[AutoMatch] Failed to save index: {e}")
 
     def calculate_fast_hash(self, filepath):
         """
@@ -113,7 +116,7 @@ class ModelIndex:
             
             return md5.hexdigest()
         except Exception as e:
-            print(f"[AutoMatch] Hash error {filepath}: {e}")
+            logger.exception(f"[AutoMatch] Hash error {filepath}: {e}")
             return None
 
     def scan_incremental(self):
@@ -122,7 +125,7 @@ class ModelIndex:
         0 重算 Hash 情况下秒级擦除被删模型，保持 100% 动态对齐
         """
         start_time = time.time()
-        print("[AutoMatch] Starting fast bi-directional path alignment scan...")
+        logger.info("[AutoMatch] Starting fast bi-directional path alignment scan...")
         
         new_or_updated_count = 0
         
@@ -163,7 +166,7 @@ class ModelIndex:
                             except OSError:
                                 continue
             except Exception as e:
-                print(f"[AutoMatch] Error scanning {type_key}: {e}")
+                logger.exception(f"[AutoMatch] Error scanning {type_key}: {e}")
                 pass
 
         # 2. 双向路径擦除与对齐
@@ -278,7 +281,7 @@ class ModelIndex:
         self.save_index()
         
         elapsed = time.time() - start_time
-        print(f"[AutoMatch] Alignment finished in {elapsed:.3f}s. Total: {len(next_models)}, Added/Updated: {new_or_updated_count}, Removed: {removed_count}")
+        logger.info(f"[AutoMatch] Alignment finished in {elapsed:.3f}s. Total: {len(next_models)}, Added/Updated: {new_or_updated_count}, Removed: {removed_count}")
         return len(next_models)
 
     def get_all_models(self):
