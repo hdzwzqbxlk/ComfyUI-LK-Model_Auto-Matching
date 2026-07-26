@@ -335,55 +335,6 @@ class AdvancedTokenizer:
         return ordered_tokens
 
     @staticmethod
-    def lookup_popular_model(filename):
-        """
-        查找 ComfyUI 主流模型 (Phase 2: DB First, Fallback to Dict)
-        返回: (repo_id, matched_key) 或 (None, None)
-        """
-        # 1. 尝试查询数据库 (Phase 2 Upgrade)
-        try:
-            from .database import db
-            result = db.search_by_filename(filename)
-            if result:
-                name, _, _, description = result
-                # 从 description 解析 repo_id ("Repo: user/repo")
-                if description and "Repo: " in description:
-                    repo_id = description.split("Repo: ")[1].strip()
-                    return (repo_id, name)
-        except ImportError:
-            pass # 可能在独立脚本中运行，无法导入
-        except Exception as e:
-            print(f"[ModelMatcher] DB Lookup Error: {e}")
-
-        # 2. 回退到旧的字典匹配 (用于兼容性或 DB 未覆盖的情况)
-        
-        # 提取基础名（无扩展名，无路径）
-        base_name = os.path.basename(filename)
-        # 移除常见扩展名
-        for ext in ['.safetensors', '.gguf', '.ckpt', '.pt', '.bin', '.pth']:
-            if base_name.lower().endswith(ext):
-                base_name = base_name[:-len(ext)]
-                break
-        
-        # 精确匹配（大小写不敏感）
-        base_lower = base_name.lower()
-        for key, repo_id in COMFYUI_POPULAR_MODELS.items():
-            if base_lower == key.lower():
-                return (repo_id, key)
-        
-        # 模糊匹配：尝试移除精度后缀再匹配
-        # 例如 "flux1-dev-fp8" -> "flux1-dev"
-        precision_suffixes = ['-fp8', '-fp16', '-bf16', '_fp8', '_fp16', '_bf16']
-        for suffix in precision_suffixes:
-            if base_lower.endswith(suffix):
-                stripped = base_lower[:-len(suffix)]
-                for key, repo_id in COMFYUI_POPULAR_MODELS.items():
-                    if stripped == key.lower():
-                        return (repo_id, key)
-        
-        return (None, None)
-
-    @staticmethod
     def _strip_variant_terms(text):
         """
         使用 Regex 移除文件名中的技术/变体术语

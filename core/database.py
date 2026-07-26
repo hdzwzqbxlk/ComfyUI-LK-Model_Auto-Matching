@@ -22,6 +22,7 @@ class ModelDatabase:
         self.db_path = db_path
         self._ensure_db_dir()
         self._init_db()
+        self._civitai_map = self._load_civitai_map()
 
     def _ensure_db_dir(self):
         """确保数据库目录存在"""
@@ -104,6 +105,19 @@ class ModelDatabase:
 
         conn.commit()
         conn.close()
+
+    def _load_civitai_map(self):
+        """Load CIVITAI_MAP from models_db.json so the matcher's SQLite path
+        can resolve Civitai alias names exactly like the searcher's JSON path."""
+        json_path = os.path.join(os.path.dirname(self.db_path), 'models_db.json')
+        if not os.path.exists(json_path):
+            return {}
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                payload = json.load(f)
+            return payload.get('CIVITAI_MAP', {}) or {}
+        except Exception:
+            return {}
 
     def add_model(self, name, model_type=None, base_model=None, description=None):
         """添加或获取模型 ID"""
@@ -371,9 +385,7 @@ class ModelDatabase:
             row = cursor.fetchone()
             if row:
                 info = self._row_to_info(row)
-                if expected_types and info.get('type') not in expected_types and info.get('type') != 'unknown':
-                    pass
-                else:
+                if self._type_ok(info.get('type'), expected_types):
                     return (_enrich_external_info(info), cfg.get('exact_score', 1.0))
 
             cursor.execute('''
@@ -383,10 +395,32 @@ class ModelDatabase:
             row = cursor.fetchone()
             if row:
                 info = self._row_to_info(row)
-                if expected_types and info.get('type') not in expected_types and info.get('type') != 'unknown':
-                    pass
-                else:
+                if self._type_ok(info.get('type'), expected_types):
                     return (_enrich_external_info(info), cfg.get('basename_score', 0.99))
+
+            # Civitai alias resolution (mirrors searcher.find_best_match_in_db so
+            # the matcher's SQLite path and the searcher's JSON path stay consistent)
+            if self._civitai_map:
+                clean_name = base_no_ext.replace('-', '_').replace('.', '_')
+                for map_key, map_path in self._civitai_map.items():
+                    if map_key in clean_name or clean_name in map_key:
+                        mapped_basename = os.path.basename(map_path).lower()
+                        cursor.execute('''
+                        SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
+                        FROM external_models WHERE filename_lower = ?
+                        ''', (mapped_basename,))
+                        mrow = cursor.fetchone()
+                        if mrow:
+                            minfo = self._row_to_info(mrow)
+                            if self._type_ok(minfo.get('type'), expected_types):
+                                return (_enrich_external_info(minfo), cfg.get('civitai_score', 0.99))
+                        return ({
+                            'repo_id': 'Kijai/WanVideo_comfy',
+                            'path': map_path,
+                            'filename': os.path.basename(map_path),
+                            'url': f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{map_path}",
+                            'pageUrl': 'https://huggingface.co/Kijai/WanVideo_comfy'
+                        }, cfg.get('civitai_score', 0.99))
 
             cursor.execute('''
             SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
@@ -495,6 +529,16 @@ class ModelDatabase:
             'family': row[8],
             'tokens': row[9],
         }
+
+    def _type_ok(self, model_type, expected_types):
+        """Return True if model_type passes the expected_types filter.
+        'unknown' type is always allowed (best-effort), matching matcher semantics.
+        """
+        if not expected_types:
+            return True
+        if model_type == 'unknown':
+            return True
+        return model_type in expected_types
 
     def _infer_type_from_filename(self, filename, repo_id=''):
         lower = (filename or '').lower()

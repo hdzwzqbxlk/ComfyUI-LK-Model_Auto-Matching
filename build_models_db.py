@@ -85,15 +85,38 @@ def write_json(models_data, output_file=OUTPUT_FILE):
 
 def import_to_sqlite(json_path=OUTPUT_FILE):
     try:
-        spec = importlib.util.spec_from_file_location("database_mod", os.path.join(ROOT, "core", "database.py"))
+        import sys
+        # Ensure project root + core/ are importable so database.py can resolve
+        # its `from config import get_matcher_config` fallback (and `from .config`).
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        core_dir = os.path.join(ROOT, "core")
+        if core_dir not in sys.path:
+            sys.path.insert(0, core_dir)
+
+        db_path = os.path.join(ROOT, "core", "data", "models.db")
+        spec = importlib.util.spec_from_file_location(
+            "database_mod", os.path.join(ROOT, "core", "database.py")
+        )
         mod = importlib.util.module_from_spec(spec)
+        sys.modules["database_mod"] = mod
         spec.loader.exec_module(mod)
-        db = mod.ModelDatabase(os.path.join(ROOT, "core", "data", "models.db"))
+        # Ensure schema exists (migrates older DBs automatically), then wipe the
+        # external_models table so the import fully replaces any stale rows.
+        # The stale 2026-02-01 db lacked this table entirely, which silently
+        # disabled the matcher's DB-first strategy.
+        db = mod.ModelDatabase(db_path)
+        conn = db._get_connection()
+        conn.execute("DELETE FROM external_models")
+        conn.commit()
+        conn.close()
         count = db.import_models_db_json(json_path)
         print(f"SQLite import complete: {count} records")
         return count
     except Exception as e:
         print(f"SQLite import failed: {e}")
+        import traceback
+        traceback.print_exc()
         return 0
 
 
