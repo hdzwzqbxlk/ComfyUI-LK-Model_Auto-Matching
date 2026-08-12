@@ -58,6 +58,6 @@
   },
   "features": {
     "chinese_tokenization": true,
-    "version_aware": false
+    "version_aware": true
   }
 }

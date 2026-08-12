@@ -13,9 +13,9 @@ USE_RAPIDFUZZ = True
 import json
 
 try:
-    from .config import get_tokenizer_config, get_searcher_config
+    from .config import get_tokenizer_config, get_searcher_config, get_features
 except ImportError:
-    from config import get_tokenizer_config, get_searcher_config
+    from config import get_tokenizer_config, get_searcher_config, get_features
 
 # ============================================================
 # 数据加载逻辑 (Phase 1: JSON-driven，统一配置驱动)
@@ -786,6 +786,80 @@ class AdvancedTokenizer:
         return None
 
     @staticmethod
+    def parse_version_tuple(name):
+        """
+        [T2.2] 抽取结构化版本三元组 (family, major, minor)。
+
+        family: 模型族标识（'wan' / 'flux' / 'qwen' / 'sdxl' / 'sd15' / 'sd21' /
+                'sd3' / 'ltx' / 'zimage' / 'hunyuan'），未知为 None。
+        major / minor: 主/次版本号（int），缺失为 None。
+
+        用途：同一 family 内 major/minor 不同 => 版本冲突（如 wan2.1 vs wan2.2），
+        用于版本感知匹配时的强降权/硬冲突判定。
+        """
+        if not name:
+            return (None, None, None)
+        lower = name.lower()
+
+        # Wan: wan2.1 / wan2_1 / wan22 / Wan21 ...
+        m = re.search(r'(?i)wan[\s\-_.]?2[\.\-_]?(\d+)', lower)
+        if m:
+            return ('wan', 2, int(m.group(1)))
+
+        # Flux: flux1 / flux.1 / flux2 / flux.2
+        m = re.search(r'(?i)flux[\s\-_.]?(\d+)(?:[\.\-_]?(\d+))?', lower)
+        if m:
+            major = int(m.group(1))
+            minor = int(m.group(2)) if m.group(2) else None
+            return ('flux', major, minor)
+
+        # Qwen: qwen2.5 / qwen25 / qwen_image (qwen 族，版本号在模型名里常见 2.5)
+        m = re.search(r'(?i)qwen[\s\-_.]?2[\.\-_]?(\d+)', lower)
+        if m:
+            return ('qwen', 2, int(m.group(1)))
+
+        # SDXL (显式 sdxl 或 sd_xl / sd xl；要求 sd 前缀避免误判 pony 等 xl 词)
+        if re.search(r'(?i)sd[\s\-_.]?xl', lower):
+            m = re.search(r'(\d+)\.(\d+)', lower)
+            if m:
+                return ('sdxl', int(m.group(1)), int(m.group(2)))
+            return ('sdxl', None, None)
+
+        # SD1.5 / SD2.1（兼容 v1-5 分隔写法与 sd15 紧凑写法）
+        m = re.search(r'(?i)v?1[\-._]5', lower)
+        if m:
+            return ('sd15', 1, 5)
+        m = re.search(r'(?i)sd\s*1\s*5', lower)
+        if m:
+            return ('sd15', 1, 5)
+        m = re.search(r'(?i)v?2[\-._]1', lower)
+        if m:
+            return ('sd21', 2, 1)
+        m = re.search(r'(?i)sd\s*2\s*1', lower)
+        if m:
+            return ('sd21', 2, 1)
+
+        # SD3 / SD3.5
+        m = re.search(r'(?i)sd[\s\-_.]?3(?:[\.\-_]?(\d+))?', lower)
+        if m:
+            return ('sd3', 3, int(m.group(1)) if m.group(1) else None)
+
+        # LTX
+        m = re.search(r'(?i)ltx[\s\-_.]?(\d+)', lower)
+        if m:
+            return ('ltx', int(m.group(1)), None)
+
+        # Z-Image
+        if re.search(r'(?i)z[\s\-_]?image', lower):
+            return ('zimage', None, None)
+
+        # Hunyuan
+        if 'hunyuan' in lower:
+            return ('hunyuan', None, None)
+
+        return (None, None, None)
+
+    @staticmethod
     def lookup_popular_model(filename):
         """
         查找 ComfyUI 主流模型/官方模型映射
@@ -1043,6 +1117,26 @@ class AdvancedTokenizer:
         
         # 加权平均: Token 相似度通常更重要，因为文件名可能有无关前缀/后缀
         final_score = (jaccard * 0.7) + (seq_ratio * 0.3)
-             
+
+        # === 2.6 版本感知降权 (T2.2) ===
+        # 同一模型族内，主/次版本不同 => 强降权，避免 wan2.1 误配 wan2.2、
+        # flux.1 不同代混淆。仅当 features.version_aware 开启时生效；
+        # 该增强逻辑异常不得影响主流程（兜底跳过）。
+        try:
+            if get_features().get('version_aware', False):
+                fam_a, maj_a, min_a = AdvancedTokenizer.parse_version_tuple(processed_a)
+                fam_b, maj_b, min_b = AdvancedTokenizer.parse_version_tuple(processed_b)
+                if fam_a and fam_b and fam_a == fam_b:
+                    version_conflict = False
+                    if maj_a is not None and maj_b is not None and maj_a != maj_b:
+                        version_conflict = True
+                    elif min_a is not None and min_b is not None and min_a != min_b:
+                        version_conflict = True
+                    if version_conflict:
+                        # 同族不同版本：强降权（非硬零，保留模糊兜底但远低于阈值）
+                        final_score *= 0.3
+        except Exception:
+            pass
+
         return final_score
 

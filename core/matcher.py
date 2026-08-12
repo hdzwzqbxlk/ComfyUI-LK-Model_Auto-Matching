@@ -1,9 +1,9 @@
 import difflib
 import os
 try:
-    from .config import get_matcher_config
+    from .config import get_matcher_config, get_features
 except ImportError:
-    from config import get_matcher_config
+    from config import get_matcher_config, get_features
 
 try:
     from .utils import AdvancedTokenizer
@@ -260,7 +260,12 @@ class ModelMatcher:
         
         if t_group != "other" and c_group != "other" and t_group != c_group:
             return True  # HARD CONFLICT: gguf <-> standard
-        
+
+        # [T2.2] 版本/族谱感知冲突（gated by features.version_aware）
+        if self._version_aware_enabled():
+            if self._version_family_conflict(t_lower, c_lower):
+                return True
+
         # 1. Critical Token Mutual Exclusion
         # If one has it, the other MUST have it.
         # Format: (TokenString, IsStrictWordBoundary)
@@ -319,6 +324,73 @@ class ModelMatcher:
             # e.g. Target={128}, Cand={64} -> Conflict
             # e.g. Target={128}, Cand={128} -> OK
             return True
+
+        return False
+
+    def _version_aware_enabled(self):
+        """读取 features.version_aware 开关（异常时保守关闭）。"""
+        try:
+            return bool(get_features().get('version_aware', False))
+        except Exception:
+            return False
+
+    def _family_variant(self, lower):
+        """返回 (family, variant) 用于族谱变体冲突判定。
+
+        family: 'flux' | 'sdxl' | None
+        variant: 'dev'|'schnell'|'fill'|'kontext'|'canny' | 'base'|'refiner'|'instruct' | None
+        仅当 family 显式出现时才返回非 None（避免 pony/xl 误判为 sdxl 族）。
+        """
+        if 'flux' in lower:
+            variant = None
+            if 'dev' in lower:
+                variant = 'dev'
+            elif 'schnell' in lower:
+                variant = 'schnell'
+            elif 'fill' in lower:
+                variant = 'fill'
+            elif 'kontext' in lower:
+                variant = 'kontext'
+            elif 'canny' in lower:
+                variant = 'canny'
+            return ('flux', variant)
+        if 'sdxl' in lower:
+            variant = None
+            if 'base' in lower:
+                variant = 'base'
+            elif 'refiner' in lower:
+                variant = 'refiner'
+            elif 'instruct' in lower:
+                variant = 'instruct'
+            return ('sdxl', variant)
+        return (None, None)
+
+    def _version_family_conflict(self, t_lower, c_lower):
+        """[T2.2] 同族不同版本 / 同族不同变体 => 硬冲突。
+
+        与 utils.calculate_similarity 的版本感知语义保持一致：
+        - 族内主/次版本不同（wan2.1 vs wan2.2）视为冲突；
+        - flux dev/schnell、sdxl base/refiner 仅在「两侧都明确指定且不同」时冲突
+          （单侧未指定变体不冲突，兼容泛化匹配）。
+        """
+        from .utils import AdvancedTokenizer
+
+        # 1. 族谱变体冲突（flux / sdxl）
+        fam_t, variant_t = self._family_variant(t_lower)
+        fam_c, variant_c = self._family_variant(c_lower)
+        if fam_t and fam_t == fam_c:
+            # 仅当两侧都明确指定变体且不一致时冲突
+            if variant_t and variant_c and variant_t != variant_c:
+                return True
+
+        # 2. 版本冲突（同一 family，主/次版本不同）
+        fam_t2, maj_t, min_t = AdvancedTokenizer.parse_version_tuple(t_lower)
+        fam_c2, maj_c, min_c = AdvancedTokenizer.parse_version_tuple(c_lower)
+        if fam_t2 and fam_c2 and fam_t2 == fam_c2:
+            if maj_t is not None and maj_c is not None and maj_t != maj_c:
+                return True
+            if min_t is not None and min_c is not None and min_t != min_c:
+                return True
 
         return False
 

@@ -8,9 +8,14 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 try:
-    from .config import get_matcher_config
+    from .config import get_matcher_config, get_features
 except ImportError:
-    from config import get_matcher_config
+    from config import get_matcher_config, get_features
+
+try:
+    from .utils import AdvancedTokenizer
+except ImportError:
+    from utils import AdvancedTokenizer
 
 class ModelDatabase:
     """
@@ -448,6 +453,19 @@ class ModelDatabase:
             if info.get('base_model') and info.get('base_model') != 'Unknown':
                 if target_tokens and info.get('base_model').lower() in ' '.join(target_tokens):
                     score += 0.1
+
+            # [T2.2] 版本感知降权：同族不同版本强降权（gated by features.version_aware）
+            try:
+                if get_features().get('version_aware', False):
+                    fam_t, maj_t, min_t = AdvancedTokenizer.parse_version_tuple(base_no_ext)
+                    fam_c, maj_c, min_c = AdvancedTokenizer.parse_version_tuple(info.get('filename') or '')
+                    if fam_t and fam_c and fam_t == fam_c:
+                        if (maj_t is not None and maj_c is not None and maj_t != maj_c) or \
+                           (min_t is not None and min_c is not None and min_t != min_c):
+                            score *= 0.3
+            except Exception:
+                pass
+
             if score > best_score and score >= cfg['semantic_min_score']:
                 best_score = score
                 best_info = info
