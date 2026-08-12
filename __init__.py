@@ -8,6 +8,24 @@ from .core.searcher import ModelSearcher
 
 logger = logging.getLogger("AutoModelMatcher")
 
+
+class ErrorCode:
+    VALIDATION_ERROR       = "VALIDATION_ERROR"
+    MATCH_FAILED           = "MATCH_FAILED"
+    SEARCH_FAILED          = "SEARCH_FAILED"
+    INDEX_REFRESH_FAILED   = "INDEX_REFRESH_FAILED"
+    CONFIG_SAVE_FAILED     = "CONFIG_SAVE_FAILED"
+    CONFIG_VALIDATE_FAILED = "CONFIG_VALIDATE_FAILED"
+    CONFIG_LOAD_FAILED     = "CONFIG_LOAD_FAILED"
+    INTERNAL_ERROR         = "INTERNAL_ERROR"
+
+
+def error_response(code: str, message: str, status: int = 500):
+    # `error` stays a STRING for backward compat with js/auto_matcher.js:196.
+    # `message` must be user-safe (no stack/trace/path).
+    return web.json_response({"error": message, "code": code}, status=status)
+
+
 __version__ = "3.6.2" # Zero-Hashing Bi-Directional Fast Path Alignment Indexing
 __author__ = "LK"
 
@@ -35,13 +53,14 @@ async def match_models(request):
                 "widget_name": m["widget_name"], 
                 "original": m["original_value"], 
                 "new_value": m["matched_value"],
-                "match_type": m.get("match_type", "Fuzzy")
+                "match_type": m.get("match_type", "Fuzzy"),
+                "type": m.get("type", "unknown")
             })
         
         return web.json_response({"matches": results})
     except Exception as e:
         logger.exception(f"[AutoModelMatcher] API Error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        return error_response(ErrorCode.MATCH_FAILED, "模型匹配失败，请稍后重试。")
 
 @server.PromptServer.instance.routes.post("/auto-matcher/search")
 async def search_models(request):
@@ -70,6 +89,7 @@ async def search_models(request):
                 # 如果本地找到了，直接返回特殊结果
                 results.append({
                     "original": filename,
+                    "type": item.get("type", "unknown"),
                     "result": {
                         "source": "Local Disk (Unindexed)",
                         "name": "Found Locally",
@@ -96,13 +116,14 @@ async def search_models(request):
                 if result_list and isinstance(result_list, list) and len(result_list) > 0:
                     results.append({
                         "original": filename,
+                        "type": item.get("type", "unknown"),
                         "result": result_list[0] # Unwrap list to get the best match object
                     })
         
         return web.json_response({"downloads": results})
     except Exception as e:
         logger.exception(f"[AutoModelMatcher] Search API Error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        return error_response(ErrorCode.SEARCH_FAILED, "模型搜索失败，请检查网络后重试。")
 
 @server.PromptServer.instance.routes.post("/auto-matcher/refresh-index")
 async def refresh_index(request):
@@ -112,7 +133,7 @@ async def refresh_index(request):
         return web.json_response({"status": "ok", "count": count})
     except Exception as e:
         logger.exception(f"[AutoModelMatcher] Index Refresh Error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        return error_response(ErrorCode.INDEX_REFRESH_FAILED, "索引刷新失败，请稍后重试。")
 
 @server.PromptServer.instance.routes.post("/auto-matcher/save-config")
 async def save_config(request):
@@ -122,7 +143,7 @@ async def save_config(request):
         return web.json_response({"status": "ok"})
     except Exception as e:
         logger.exception(f"[AutoModelMatcher] Save Config Error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        return error_response(ErrorCode.CONFIG_SAVE_FAILED, "配置保存失败，请稍后重试。")
 
 @server.PromptServer.instance.routes.post("/auto-matcher/validate-config")
 async def validate_config(request):
@@ -133,7 +154,7 @@ async def validate_config(request):
         return web.json_response({"valid": is_valid, "message": msg})
     except Exception as e:
         logger.exception(f"[AutoModelMatcher] Validate Config Error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        return error_response(ErrorCode.CONFIG_VALIDATE_FAILED, "配置校验失败，请稍后重试。")
 
 @server.PromptServer.instance.routes.get("/auto-matcher/get-config")
 async def get_config(request):
@@ -145,7 +166,7 @@ async def get_config(request):
         return web.json_response(response_data)
     except Exception as e:
         logger.exception(f"[AutoModelMatcher] Get Config Error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        return error_response(ErrorCode.CONFIG_LOAD_FAILED, "配置读取失败，请稍后重试。")
 
 # 插件目录配置
 WEB_DIRECTORY = "./js"

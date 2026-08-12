@@ -103,7 +103,8 @@
   - 确立 `build_models_db.py` 为唯一数据源；让 matcher 与 searcher **共用同一份**外部模型库（建议都读 `models_db.json`，或都走重建后的 SQLite），消除双路径不一致。
   - 将测试从 `core/models_db.py`（3236 条遗留巨字典）改引 `models_db_reader`。
 - **T1.4 前后端契约（fullstack-dev §5/§12）**
-  - 在 `__init__.py` 6 个路由与 `js/auto_matcher.js` 间建立共享字段约定（手写 typed contract / JSON schema），保证 `matched_value/path/match_type/type` 等字段前后端一致；前端错误映射到用户可读消息。
+  - 在 `__init__.py` 6 个路由与 `js/auto_matcher.js` 间建立共享字段约定（手写 typed contract / JSON schema），保证 `new_value/path/match_type/type` 等字段前后端一致；前端错误映射到用户可读消息。
+  - 注：后端匹配结果字段实际名为 `new_value`（`__init__.py` 由 `m["matched_value"]` 映射），前端读 `m.new_value` —— 二者一致，**不要改名**（原计划写的 `matched_value` 是文档笔误，已更正）。
 - **T1.5 SQLite 迁移纪律（fullstack-dev §4）**
   - `database.py` 的 `ALTER TABLE` 兼容逻辑改为显式迁移版本号 + 可重放迁移脚本。
 
