@@ -274,7 +274,7 @@ class ModelMatcher:
             "i2v", "t2v",
             "inpainting",
             "vae", # Critical: VAE vs Checkpoint
-            "upscaler",
+            "upscaler", "upscale",  # 基类 vs 放大模型必须互斥（修复 qwen_image_edit upscale↔base 误匹配）
             "refiner",
             "img2vid", "txt2vid"
         ]
@@ -283,9 +283,9 @@ class ModelMatcher:
         # Using simple 'in' is safer for "Wan2.1_I2V" (no spaces)
         
         for token in critical_tokens:
-            in_target = token in t_lower
-            in_cand = token in c_lower
-            
+            in_target = self._token_present(t_lower, token)
+            in_cand = self._token_present(c_lower, token)
+
             # XOR: One has it, the other doesn't -> Conflict
             if in_target != in_cand:
                 return True
@@ -326,6 +326,28 @@ class ModelMatcher:
             return True
 
         return False
+
+    def _token_present(self, name_lower, token):
+        """词边界感知的 token 检测：token 必须作为独立词出现。
+
+        避免 ``0.9vae`` 这类质量后缀被误判为 VAE 模型类型（朴素 ``in`` 子串会命中），
+        同时保证 ``sdxl_vae`` / ``qwen..._upscale`` 等真实类型词仍被正确识别。
+        独立词 = token 前后为分隔符（非字母数字）或字符串边界。
+        """
+        if not token:
+            return False
+        n = len(token)
+        idx = 0
+        while True:
+            i = name_lower.find(token, idx)
+            if i == -1:
+                return False
+            left_ok = (i == 0) or (not name_lower[i - 1].isalnum())
+            j = i + n
+            right_ok = (j == len(name_lower)) or (not name_lower[j].isalnum())
+            if left_ok and right_ok:
+                return True
+            idx = i + n
 
     def _version_aware_enabled(self):
         """读取 features.version_aware 开关（异常时保守关闭）。"""
@@ -484,7 +506,10 @@ class ModelMatcher:
             if expected_types:
                 if cand_type not in expected_types:
                     continue  # Strict Skip
-                type_score = 30.0 # Bonus for consistency match
+                # 轻量一致性加分：仅作为同类型候选间的微小偏好，
+                # 不可单独把弱名称匹配（base_final 很低）抬过阈值——否则
+                # totally_unknown_model 会因共享 'model' 词 + 同类型而被误匹配。
+                type_score = 10.0
 
             # 4. [v3.6.0] CJK 中文字符重叠 Bonus
             cjk_bonus = 0.0
