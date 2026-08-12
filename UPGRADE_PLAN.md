@@ -105,8 +105,11 @@
 - **T1.4 前后端契约（fullstack-dev §5/§12）**
   - 在 `__init__.py` 6 个路由与 `js/auto_matcher.js` 间建立共享字段约定（手写 typed contract / JSON schema），保证 `new_value/path/match_type/type` 等字段前后端一致；前端错误映射到用户可读消息。
   - 注：后端匹配结果字段实际名为 `new_value`（`__init__.py` 由 `m["matched_value"]` 映射），前端读 `m.new_value` —— 二者一致，**不要改名**（原计划写的 `matched_value` 是文档笔误，已更正）。
-- **T1.5 SQLite 迁移纪律（fullstack-dev §4）**
-  - `database.py` 的 `ALTER TABLE` 兼容逻辑改为显式迁移版本号 + 可重放迁移脚本。
+- **T1.5 SQLite 迁移纪律（fullstack-dev §4）— ✅ 已实施（2026-08-12）**
+  - `database.py` 的 `ALTER TABLE` 静默兼容改为：`schema_migrations` 版本表 + `MIGRATIONS` 有序幂等列表
+    （v1 建基础表、v2 带 PRAGMA 守卫加语义列）+ `run_migrations()/get_schema_version()/migrate()`。
+  - 验证：`regression_tests/migration_check.py`（全新库→最新版本 / 幂等重放 / 遗留库安全升级且数据不丢 / 版本常量一致）。
+  - 调研佐证见 `docs/RESEARCH_AND_DEEPENING_PLAN.md`；下次改表只需追加 `(3, ...)` 并 `SCHEMA_VERSION=3`。
 
 **里程碑 M2 验收**：单配置入口；错误/日志结构化；matcher 与 searcher 同源；契约文档存在且测试覆盖。
 

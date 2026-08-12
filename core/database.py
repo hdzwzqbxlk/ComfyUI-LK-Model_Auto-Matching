@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import re
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -37,76 +38,57 @@ class ModelDatabase:
         return sqlite3.connect(self.db_path)
 
     def _init_db(self):
-        """初始化数据库 Schema"""
+        """初始化数据库：运行可重放迁移到最新 schema 版本（T1.5）。"""
+        self.run_migrations()
+
+    def run_migrations(self):
+        """应用所有待执行、有序、幂等的迁移。
+
+        已应用的版本记录在 ``schema_migrations`` 表中，使 schema 始终可复现、
+        可重放（T1.5 SQLite 迁移纪律）。
+        """
         conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        # 1. Models 表：存储规范化模型信息
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS models (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,  -- 标准化名称 (e.g., "Flux.1 Dev")
-            type TEXT,                  -- Checkpoint, LoRA, VAE
-            base_model TEXT,            -- SDXL, SD1.5, Flux
-            description TEXT
-        )
-        ''')
-
-        # 2. File Hashes 表：用于哈希精确匹配
-        # 这里使用 hash_sha256 作为主键，防止重复
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS file_hashes (
-            hash_sha256 TEXT PRIMARY KEY,
-            model_id INTEGER,
-            filename TEXT,              -- 已知的官方文件名 (可选)
-            source TEXT,                -- Civitai, HuggingFace
-            FOREIGN KEY(model_id) REFERENCES models(id)
-        )
-        ''')
-
-        # 3. Aliases 表：用于文件名模糊匹配
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS aliases (
-            alias TEXT PRIMARY KEY,
-            model_id INTEGER,
-            is_regex BOOLEAN DEFAULT 0,
-            FOREIGN KEY(model_id) REFERENCES models(id)
-        )
-        ''')
-
-        # 4. External models table: stores entries imported from core/data/models_db.json
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS external_models (
-            filename_lower TEXT PRIMARY KEY,
-            repo_id TEXT,
-            path TEXT,
-            filename TEXT,
-            source TEXT,
-            normalized_name TEXT,
-            alias TEXT,
-            type TEXT,
-            base_model TEXT,
-            family TEXT,
-            tokens TEXT
-        )
-        ''')
-        # Handle older DB files that already have the old schema without the new columns
         try:
-            columns = [row[1] for row in cursor.execute('PRAGMA table_info(external_models)')]
-            for col_name in ['normalized_name', 'alias', 'type', 'base_model', 'family', 'tokens']:
-                if col_name not in columns:
-                    cursor.execute(f'ALTER TABLE external_models ADD COLUMN {col_name} TEXT')
-        except Exception:
-            pass
-        conn.commit()
-        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_filename ON external_models(filename_lower)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_normalized ON external_models(normalized_name)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_alias ON external_models(alias)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_type ON external_models(type)')
-        conn.commit()
+            conn.execute('''
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL,
+                description TEXT
+            )
+            ''')
+            applied = {row[0] for row in conn.execute('SELECT version FROM schema_migrations')}
+            for version, description, fn in MIGRATIONS:
+                if version in applied:
+                    continue
+                fn(conn)
+                conn.execute(
+                    'INSERT INTO schema_migrations (version, applied_at, description) '
+                    'VALUES (?, ?, ?)',
+                    (version, datetime.now(timezone.utc).isoformat(), description),
+                )
+                conn.commit()
+                logger.info('[DB] 应用迁移 v%d: %s', version, description)
+        finally:
+            conn.close()
 
-        conn.commit()
-        conn.close()
+    def get_schema_version(self):
+        """返回已应用的最高迁移版本（无则为 0）。"""
+        conn = self._get_connection()
+        try:
+            row = conn.execute('SELECT MAX(version) FROM schema_migrations').fetchone()
+            return row[0] if row and row[0] is not None else 0
+        except Exception:
+            return 0
+        finally:
+            conn.close()
+
+    def migrate(self):
+        """公开入口：将数据库升级到最新 schema 版本。
+
+        可重复调用。返回最终的 schema 版本号。
+        """
+        self.run_migrations()
+        return self.get_schema_version()
 
     def _load_civitai_map(self):
         """Load CIVITAI_MAP from models_db.json so the matcher's SQLite path
@@ -637,8 +619,83 @@ def _enrich_external_info(info):
         new_info['pageUrl'] = f"https://huggingface.co/{repo_id}/tree/main"
     return new_info
 
+# ---------------------------------------------------------------------------
+# Schema 迁移（T1.5）：显式、有序、幂等、可重放。
+# SCHEMA_VERSION 为最新版本号；新增迁移时同步递增。
+# 每个迁移函数接收一个已打开的 sqlite3 连接，必须可重复执行
+# （使用 IF NOT EXISTS / PRAGMA 守卫）。
+# ---------------------------------------------------------------------------
+SCHEMA_VERSION = 2
+
+
+def _migration_v1(conn):
+    """基础 schema：models / file_hashes / aliases / external_models（核心列）。"""
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS models (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        type TEXT,
+        base_model TEXT,
+        description TEXT
+    )
+    ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS file_hashes (
+        hash_sha256 TEXT PRIMARY KEY,
+        model_id INTEGER,
+        filename TEXT,
+        source TEXT,
+        FOREIGN KEY(model_id) REFERENCES models(id)
+    )
+    ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS aliases (
+        alias TEXT PRIMARY KEY,
+        model_id INTEGER,
+        is_regex BOOLEAN DEFAULT 0,
+        FOREIGN KEY(model_id) REFERENCES models(id)
+    )
+    ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS external_models (
+        filename_lower TEXT PRIMARY KEY,
+        repo_id TEXT,
+        path TEXT,
+        filename TEXT,
+        source TEXT
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_filename '
+                   'ON external_models(filename_lower)')
+    conn.commit()
+
+
+def _migration_v2(conn):
+    """为 external_models 增加语义列（带列存在性守卫，幂等）。"""
+    cursor = conn.cursor()
+    existing = {row[1] for row in cursor.execute('PRAGMA table_info(external_models)')}
+    for col in ('normalized_name', 'alias', 'type', 'base_model', 'family', 'tokens'):
+        if col not in existing:
+            cursor.execute(f'ALTER TABLE external_models ADD COLUMN {col} TEXT')
+    cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_normalized '
+                   'ON external_models(normalized_name)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_alias '
+                   'ON external_models(alias)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS ix_external_models_type '
+                   'ON external_models(type)')
+    conn.commit()
+
+
+MIGRATIONS = [
+    (1, 'create base schema (models/file_hashes/aliases/external_models)', _migration_v1),
+    (2, 'add semantic columns to external_models (normalized_name/alias/type/base_model/family/tokens)', _migration_v2),
+]
+
+
 # 单例实例
 db = ModelDatabase()
 if __name__ == "__main__":
-    # 如果直接运行脚本，执行迁移
-    db.populate_from_json()
+    # 如果直接运行脚本，执行迁移并打印当前 schema 版本
+    version = db.migrate()
+    print(f"[DB] 迁移完成，当前 schema 版本: v{version}")
