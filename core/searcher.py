@@ -1075,65 +1075,114 @@ class GoogleOmniProvider(BaseProvider):
 
 class LiblibProvider(BaseProvider):
     """
-    Search models on liblib.art (哩布哩布) via HTML scraping.
-    Liblib 是国内最大的 AI 模型社区之一。
+    Search models on liblib.art (哩布哩布) via its internal Web API.
+
+    T2.4 重写说明（替换旧版失效的静态 HTML 抓取）：
+    旧实现抓取 `liblib.art/search` 的静态 /modelinfo/ 链接，但搜索页是 JS 动态渲染，
+    静态链接基本缺失 → 生产环境几乎失效。改为调用 liblib **内部 JSON API**
+    （与前端同款，已被社区工具 liblib-spider 验证）：
+
+      · 搜索：POST https://api2.liblib.art/api/www/model/search
+            body: {"keyword","periodTime":["all"],"page":1,"pageSize":50,
+                   "types":[],"models":[],"vipType":[]}
+            resp: {"code":0, "data":{"data":[{uuid, name?, ...}], "hasMore":bool}}
+            **只需浏览器 UA，无需登录态 / Token**（已验证匿名可调用）
+      · 详情：POST https://api2.liblib.art/api/www/model/getByUuid/{uuid}
+            resp: {"code":0, "data":{"name", "versions":[...]}}
+            同样匿名可调用；本 Provider 只取 name 用于相似度打分，不下载。
+      · 页面链接按 uuid 拼接：https://www.liblib.art/modelinfo/{uuid}
+
+    维护提示：api2.liblib.art 为未公开内部接口，可能随站点改版变动；
+    解析逻辑由 regression_tests/provider_check.py 的 mock 用例锁死，便于回归发现断裂。
     """
     def __init__(self, config):
         super().__init__(config)
-        self.search_url = "https://www.liblib.art/search"
-        
+        self.api_base = "https://api2.liblib.art/api/www"
+        self.search_url = f"{self.api_base}/model/search"
+        self.info_url_tpl = f"{self.api_base}/model/getByUuid/{{uuid}}"
+        self.page_url_tpl = "https://www.liblib.art/modelinfo/{uuid}"
+        # 内部接口只需浏览器 UA；curl_cffi 的 chrome124 指纹与站点前端一致即可。
+        self.impersonate = "chrome124"
+
+    async def _fetch_json(self, session, url, json_body=None):
+        """GET/POST 取 JSON；非 200 或解析失败返回 None（调用方自行兜底）。"""
+        params = {"timestamp": time.time()}
+        headers = self._get_headers("https://www.liblib.art/")
+        try:
+            if json_body is not None:
+                resp = await session.post(url, params=params, json=json_body, headers=headers)
+            else:
+                resp = await session.get(url, params=params, headers=headers)
+        except Exception as e:
+            logger.warning(f"[LiblibProvider] request failed: {e}")
+            return None
+        if resp.status_code != 200:
+            logger.warning(f"[LiblibProvider] Status {resp.status_code} for {url}")
+            return None
+        try:
+            return resp.json()
+        except Exception:
+            return None
+
+    async def _get_model_name(self, session, model_uuid, fallback=None):
+        """从详情接口取模型名；失败回退 fallback。"""
+        info = await self._fetch_json(session, self.info_url_tpl.format(uuid=model_uuid))
+        if info and info.get("code") == 0 and info.get("data"):
+            return info["data"].get("name") or fallback
+        return fallback
+
     async def search(self, query, original_filename):
         results = []
         try:
             logger.debug(f"[LiblibProvider] Searching: {query}")
-            
-            encoded_query = urllib.parse.quote(query)
-            url = f"{self.search_url}?keyword={encoded_query}"
-            
+            body = {
+                "keyword": query,
+                "periodTime": ["all"],
+                "page": 1,
+                "pageSize": 50,
+                "types": [],
+                "models": [],
+                "vipType": [],
+            }
             headers = self._get_headers("https://www.liblib.art/")
-            
             async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
-                response = await session.get(url)
-                if response.status_code != 200:
-                    logger.warning(f"[LiblibProvider] Status {response.status_code}")
+                search_resp = await self._fetch_json(session, self.search_url, json_body=body)
+                if not search_resp:
                     return []
-                
-                html = response.text
-                selector = Selector(text=html)
-                
-                # Liblib 搜索结果页面使用动态 JS 渲染
-                # 尝试解析静态内容中的模型卡片链接
-                links = selector.css('a[href*="/modelinfo/"]::attr(href)').getall()
-                
+                items = (search_resp.get("data") or {}).get("data") or []
                 original_lower = original_filename.lower()
-                seen_urls = set()
-                
-                for link in links[:10]:
-                    if link in seen_urls:
+                seen = set()
+                candidates = []  # [(uuid, name)]
+                for item in items[:10]:
+                    model_uuid = item.get("uuid")
+                    if not model_uuid or model_uuid in seen:
                         continue
-                    seen_urls.add(link)
-                    
-                    if link.startswith("/"):
-                        full_url = f"https://www.liblib.art{link}"
-                    elif link.startswith("http"):
-                        full_url = link
-                    else:
-                        continue
-                    
-                    model_id = link.split("/modelinfo/")[-1].split("/")[0] if "/modelinfo/" in link else "Liblib Model"
-                    
-                    score = AdvancedTokenizer.calculate_similarity(original_lower, model_id.lower())
-                    
+                    seen.add(model_uuid)
+                    candidates.append((model_uuid, item.get("name")))
+
+                # 对缺失 name 的候选批量补名（最多 5 个，避免过多请求）
+                missing = [(u, n) for (u, n) in candidates if not n]
+                if missing:
+                    top_missing = missing[:5]
+                    names = await asyncio.gather(
+                        *(self._get_model_name(session, u) for (u, _) in top_missing)
+                    )
+                    name_map = {u: nm for (u, _), nm in zip(top_missing, names)}
+                    candidates = [(u, n or name_map.get(u) or u) for (u, n) in candidates]
+
+                for model_uuid, name in candidates:
+                    name_lower = (name or model_uuid).lower()
+                    score = AdvancedTokenizer.calculate_similarity(original_lower, name_lower)
                     if score > 0.3:
+                        page_url = self.page_url_tpl.format(uuid=model_uuid)
                         results.append({
                             "source": "Liblib",
-                            "name": model_id,
+                            "name": name or model_uuid,
                             "filename": "Direct Link (Click to Visit)",
-                            "url": full_url,
-                            "pageUrl": full_url,
-                            "score": score
+                            "url": page_url,
+                            "pageUrl": page_url,
+                            "score": score,
                         })
-                        
         except Exception as e:
             logger.exception(f"[LiblibProvider] Error: {e}")
         return results
