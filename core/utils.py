@@ -231,6 +231,38 @@ CRITICAL_TERMS = set(_DATA.get('critical_terms', {
     'depth', 'canny', 'openpose',
 }))
 
+# ============================================================
+# T2.1: 轻量中文分词词典（正向最大匹配）+ 中文→英文别名
+# 设计取舍：不引入 jieba 等外部依赖（用户偏好零依赖 / 免构建），
+# 内置覆盖 ComfyUI 模型域高频中文词的精简词典即可满足 G2 本地化匹配。
+# 词典可从统一配置 core/data/models_data.json 的 "cjk" 段覆盖。
+# ============================================================
+try:
+    _CJK_DATA = get_tokenizer_config().get("cjk", {}) or {}
+except Exception:
+    _CJK_DATA = {}
+
+_CJK_TERMS = _CJK_DATA.get("terms", [
+    "动漫", "二次元", "写实", "真实", "基础", "底模", "大模型", "模型",
+    "精炼", "修复", "放大", "超分", "超清", "量化", "风格", "卡通", "插画",
+    "国风", "赛博", "朋克", "机甲", "风景", "人像", "全身", "半身",
+    "线稿", "上色", "老照片", "建筑", "动物", "美食", "增强", "游戏", "电影",
+])
+_CJK_ALIASES = _CJK_DATA.get("aliases", {
+    "动漫": "anime", "二次元": "anime", "写实": "realistic", "真实": "realistic",
+    "基础": "base", "底模": "base", "大模型": "base model", "精炼": "refiner",
+    "修复": "restoration", "放大": "upscale", "超分": "upscale", "超清": "upscale",
+    "量化": "quantized", "风格": "style", "卡通": "cartoon", "插画": "illustration",
+    "国风": "chinese style", "赛博": "cyberpunk", "朋克": "punk", "机甲": "mecha",
+    "风景": "landscape", "人像": "portrait", "全身": "full body", "半身": "upper body",
+    "线稿": "lineart", "上色": "colorization", "老照片": "old photo",
+    "建筑": "architecture", "动物": "animal", "美食": "food", "增强": "enhance",
+})
+# 去重并保持为集合，便于 O(1) 查找；最大词长用于正向匹配上界。
+_CJK_TERM_SET = set(_CJK_TERMS)
+_CJK_MAX_LEN = max((len(t) for t in _CJK_TERMS), default=2)
+
+
 class AdvancedTokenizer:
     """
     统一的智能分词器，用于本地匹配和网络搜索
@@ -272,8 +304,66 @@ class AdvancedTokenizer:
         # 3. Replace delimiters
         for char in ['_', '-', '.', ' ', '/', '\\', '[', ']', '(', ')']:
             text = text.replace(char, ' ')
-            
+
         return text
+
+    # ----------------------------------------------------------
+    # T2.1 中文分词辅助方法（gated by features.chinese_tokenization）
+    # ----------------------------------------------------------
+    @staticmethod
+    def _is_cjk(ch):
+        """判断单字符是否在常用汉字 Unicode 区间。"""
+        return '\u4e00' <= ch <= '\u9fff'
+
+    @staticmethod
+    def _cjk_enabled():
+        """读取 features.chinese_tokenization 开关（异常时保守关闭）。"""
+        try:
+            return bool(get_features().get('chinese_tokenization', False))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _segment_cjk(text):
+        """轻量中文分词：正向最大匹配 + OOV 单字兜底。
+
+        仅对连续 CJK 串做词级切分；非 CJK 字符原样返回（中英边界已由
+        _normalize_text / extract_search_terms 处理）。返回词列表
+        （含词典词与单字），供 tokenize 与搜索词构造复用。
+        """
+        tokens = []
+        i = 0
+        n = len(text)
+        while i < n:
+            ch = text[i]
+            if not AdvancedTokenizer._is_cjk(ch):
+                tokens.append(ch)
+                i += 1
+                continue
+            # 收集连续 CJK 段
+            j = i
+            while j < n and AdvancedTokenizer._is_cjk(text[j]):
+                j += 1
+            run = text[i:j]
+            k = 0
+            m = len(run)
+            while k < m:
+                matched = None
+                maxlen = min(_CJK_MAX_LEN, m - k)
+                for length in range(maxlen, 0, -1):
+                    cand = run[k:k + length]
+                    if cand in _CJK_TERM_SET:
+                        matched = cand
+                        break
+                if matched:
+                    tokens.append(matched)
+                    k += len(matched)
+                else:
+                    # OOV 单字
+                    tokens.append(run[k])
+                    k += 1
+            i = j
+        return tokens
 
     @staticmethod
     def tokenize(text):
@@ -331,16 +421,26 @@ class AdvancedTokenizer:
             sub_tokens = re.findall(r'[a-z]+|\d+|[^\x00-\x7f]+', part)
             if sub_tokens:
                 for st in sub_tokens:
-                    tokens.append(st)
-                    # [v3.6.0 CJK N-Gram] 针对中文字串提取滑动窗口 2-Gram 词块及单字
+                    # [T2.1] CJK 分词：开启 chinese_tokenization 时用词典正向最大匹配产出
+                    # 中文词（如「动漫」「大模型」）+ 单字兜底，并保留既有 2-gram 以提升模糊召回；
+                    # 关闭时回退到既有 2-gram 行为（严格兼容）。
                     if re.search(r'[\u4e00-\u9fff]', st):
-                        cjk_chars = [c for c in st if re.match(r'[\u4e00-\u9fff]', c)]
-                        if len(cjk_chars) > 1:
-                            # 2-Gram 词块
-                            for i in range(len(cjk_chars) - 1):
-                                tokens.append(cjk_chars[i] + cjk_chars[i+1])
-                        # 单字
-                        tokens.extend(cjk_chars)
+                        if AdvancedTokenizer._cjk_enabled():
+                            tokens.extend(AdvancedTokenizer._segment_cjk(st))
+                            # 保留既有相邻 2-gram 兜底（与关闭时行为对齐，提升召回）
+                            cjk_chars = [c for c in st if re.match(r'[\u4e00-\u9fff]', c)]
+                            if len(cjk_chars) > 1:
+                                for ci in range(len(cjk_chars) - 1):
+                                    tokens.append(cjk_chars[ci] + cjk_chars[ci + 1])
+                        else:
+                            tokens.append(st)
+                            cjk_chars = [c for c in st if re.match(r'[\u4e00-\u9fff]', c)]
+                            if len(cjk_chars) > 1:
+                                for ci in range(len(cjk_chars) - 1):
+                                    tokens.append(cjk_chars[ci] + cjk_chars[ci + 1])
+                            tokens.extend(cjk_chars)
+                    else:
+                        tokens.append(st)
             else:
                 tokens.append(part)
                 
@@ -628,6 +728,24 @@ class AdvancedTokenizer:
                 if english_core.lower() not in [t.lower() for t in search_terms]:
                     search_terms.append(english_core)
 
+        # === Phase 2c: 中文→英文别名扩展（国际平台兜底，G2 / T2.1） ===
+        # 开启中文分词时，将中文模型词映射为英文概念并追加为搜索词，
+        # 提升 ModelScope / Civitai / Google 等国际平台命中率。
+        if AdvancedTokenizer._cjk_enabled() and re.search(r'[\u4e00-\u9fff]', base_name):
+            zh_runs = re.findall(r'[\u4e00-\u9fff]+', base_name)
+            alias_tokens = []
+            for run in zh_runs:
+                for word in AdvancedTokenizer._segment_cjk(run):
+                    en = _CJK_ALIASES.get(word)
+                    if en:
+                        alias_tokens.extend(en.split())
+            if alias_tokens:
+                alias_core = ' '.join(alias_tokens)
+                if ext_lower == '.gguf' and 'gguf' not in alias_core.lower():
+                    alias_core += " gguf"
+                if alias_core.lower() not in [t.lower() for t in search_terms]:
+                    search_terms.append(alias_core)
+
         # === Phase 2b: Deep Tokenization (CamelCase & AlphaNumeric Split) ===
         # 针对 wan22RemixSFW 这种连写情况，强制拆分为 "wan 22 Remix SFW"
         # 1. 拆分驼峰: "RemixSFW" -> "Remix SFW"
@@ -662,10 +780,21 @@ class AdvancedTokenizer:
         optimized_base = re.sub(r'(?i)(?<![a-z])F[\.\s_-]?1(?![a-z0-9])', 'Flux.1', raw_stem)
         
         # 4.2 CJK 分词 (CJK Segmentation)
-        # 在中文和英文/数字之间插入空格: "人脸F" -> "人脸 F"
-        optimized_base = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', optimized_base)
-        optimized_base = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', optimized_base)
-        
+        # [T2.1] 开启中文分词时：先保证中英边界空格，再对中文连续串做词级切分
+        # （「动漫大模型」→「动漫 大模型」）；关闭时回退既有中英边界切分。
+        if AdvancedTokenizer._cjk_enabled():
+            # 先保证中英/数字边界空格（与关闭时一致），避免「动漫Flux.1」粘连
+            optimized_base = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', optimized_base)
+            optimized_base = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', optimized_base)
+
+            def _cjk_word_space(m):
+                return ' '.join(AdvancedTokenizer._segment_cjk(m.group(0)))
+            optimized_base = re.sub(r'[\u4e00-\u9fff]+', _cjk_word_space, optimized_base)
+        else:
+            # 在中文和英文/数字之间插入空格: "人脸F" -> "人脸 F"
+            optimized_base = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', optimized_base)
+            optimized_base = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', optimized_base)
+
         # 4.3 清洗多余符号
         optimized_base = re.sub(r'[-_.]+', ' ', optimized_base).strip()
         
