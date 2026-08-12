@@ -269,5 +269,9 @@
         "normalbae",
         "seg",
         "lineart"
-    ]
+    ],
+    "valid_extensions": [".gguf", ".safetensors", ".ckpt", ".pt", ".bin", ".pth", ".onnx", ".pkl"],
+    "precision_suffixes": ["-fp8", "-fp16", "-bf16", "_fp8", "_fp16", "_bf16", ".fp8", ".fp16", ".bf16"],
+    "noise_words": ["average", "rank", "ranrank", "merged", "combined"],
+    "strict_precisions": ["bf16", "fp8", "int8", "int4", "q8"]
 }

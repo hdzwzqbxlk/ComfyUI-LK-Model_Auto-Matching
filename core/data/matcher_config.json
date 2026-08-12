@@ -4,7 +4,8 @@
     "exact_score": 1.0,
     "basename_score": 0.99,
     "semantic_min_score": 0.35,
-    "fuzzy_score_cutoff": 80
+    "fuzzy_score_cutoff": 80,
+    "civitai_score": 0.99
   },
   "matching": {
     "use_db_first": true,
@@ -15,5 +16,48 @@
     "fuzzy_score_cutoff": 60.0,
     "variant_score_cutoff": 0.9,
     "legacy_score_cutoff": 75
+  },
+  "searcher": {
+    "network": {
+      "timeout": 20,
+      "impersonate": "chrome124"
+    },
+    "cache_ttl": 300,
+    "early_stop_score": 0.7,
+    "high_confidence_score": 0.9,
+    "db_fallback_score": 0.85,
+    "search_term_limit": 5,
+    "api": {
+      "civitai": {
+        "url": "https://civitai.com/api/v1/model-versions/by-hash",
+        "limit": 20
+      },
+      "huggingface": {
+        "limit": 8,
+        "hash_scores": {
+          "exact": 0.98,
+          "dir": 0.95,
+          "file": 0.92
+        }
+      },
+      "google": {
+        "num": 20
+      },
+      "liblib": {
+        "limit": 8
+      }
+    },
+    "providers": {
+      "modelscope": {
+        "timeout": 25
+      },
+      "huggingface": {
+        "scan_dirs": []
+      }
+    }
+  },
+  "features": {
+    "chinese_tokenization": true,
+    "version_aware": false
   }
 }

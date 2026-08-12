@@ -388,7 +388,7 @@ class ModelDatabase:
             if row:
                 info = self._row_to_info(row)
                 if self._type_ok(info.get('type'), expected_types):
-                    return (_enrich_external_info(info), cfg.get('exact_score', 1.0))
+                    return (_enrich_external_info(info), cfg['exact_score'])
 
             cursor.execute('''
             SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
@@ -398,7 +398,7 @@ class ModelDatabase:
             if row:
                 info = self._row_to_info(row)
                 if self._type_ok(info.get('type'), expected_types):
-                    return (_enrich_external_info(info), cfg.get('basename_score', 0.99))
+                    return (_enrich_external_info(info), cfg['basename_score'])
 
             # Civitai alias resolution (mirrors searcher.find_best_match_in_db so
             # the matcher's SQLite path and the searcher's JSON path stay consistent)
@@ -415,14 +415,14 @@ class ModelDatabase:
                         if mrow:
                             minfo = self._row_to_info(mrow)
                             if self._type_ok(minfo.get('type'), expected_types):
-                                return (_enrich_external_info(minfo), cfg.get('civitai_score', 0.99))
+                                return (_enrich_external_info(minfo), cfg['civitai_score'])
                         return ({
                             'repo_id': 'Kijai/WanVideo_comfy',
                             'path': map_path,
                             'filename': os.path.basename(map_path),
                             'url': f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{map_path}",
                             'pageUrl': 'https://huggingface.co/Kijai/WanVideo_comfy'
-                        }, cfg.get('civitai_score', 0.99))
+                        }, cfg['civitai_score'])
 
             cursor.execute('''
             SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens
@@ -466,7 +466,7 @@ class ModelDatabase:
             if info.get('base_model') and info.get('base_model') != 'Unknown':
                 if target_tokens and info.get('base_model').lower() in ' '.join(target_tokens):
                     score += 0.1
-            if score > best_score and score >= cfg.get('semantic_min_score', 0.35):
+            if score > best_score and score >= cfg['semantic_min_score']:
                 best_score = score
                 best_info = info
 
@@ -482,7 +482,7 @@ class ModelDatabase:
                 keys = [r[0] for r in cursor.fetchall()]
                 if keys:
                     res = process.extractOne(base_lower, keys, scorer=fuzz.token_set_ratio)
-                    if res and res[1] >= cfg.get('fuzzy_score_cutoff', 85):
+                    if res and res[1] >= cfg['fuzzy_score_cutoff']:
                         matched_key = res[0]
                         cursor.execute('''
                         SELECT repo_id, path, filename, source, normalized_name, alias, type, base_model, family, tokens

@@ -12,25 +12,42 @@ USE_RAPIDFUZZ = True
 # 噪声后缀词（仅过滤纯技术后缀，不过滤版本号和模型组件名）
 import json
 
+try:
+    from .config import get_tokenizer_config, get_searcher_config
+except ImportError:
+    from config import get_tokenizer_config, get_searcher_config
+
 # ============================================================
-# 数据加载逻辑 (Phase 1: JSON-driven)
+# 数据加载逻辑 (Phase 1: JSON-driven，统一配置驱动)
 # ============================================================
 
 def load_models_data():
-    """从 models_data.json 加载配置，如果失败则返回默认值"""
-    json_path = os.path.join(os.path.dirname(__file__), 'data', 'models_data.json')
-    data = {}
-    
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except Exception as e:
-            logger.exception(f"[ModelMatcher] Error loading models_data.json: {e}")
-    
-    return data
+    """从统一配置加载分词数据字典（models_data.json 经 config 合并）。
+
+    保留文件缺失/合并失败时的兜底默认，行为不变。
+    """
+    try:
+        data = get_tokenizer_config()
+    except Exception as exc:
+        logger.warning("[ModelMatcher] 统一配置加载失败，使用兜底默认: %s", exc)
+        data = {}
+    return data or {}
 
 _DATA = load_models_data()
+
+# 从统一配置读取原本硬编码的扩展名 / 精度后缀 / 噪声词 / 严格精度集合。
+VALID_EXTENSIONS = set(_DATA.get("valid_extensions", [
+    ".gguf", ".safetensors", ".ckpt", ".pt", ".bin", ".pth", ".onnx", ".pkl",
+]))
+PRECISION_SUFFIXES = _DATA.get("precision_suffixes", [
+    "-fp8", "-fp16", "-bf16", "_fp8", "_fp16", "_bf16", ".fp8", ".fp16", ".bf16",
+])
+NOISE_WORDS = set(_DATA.get("noise_words", {
+    "average", "rank", "ranrank", "merged", "combined",
+}))
+STRICT_PRECISIONS = set(_DATA.get("strict_precisions", {
+    "bf16", "fp8", "int8", "int4", "q8",
+}))
 
 # 1. 噪声后缀词
 NOISE_SUFFIXES = set(_DATA.get('noise_suffixes', {
@@ -349,9 +366,8 @@ class AdvancedTokenizer:
         text = text.lower()
         
         # 只移除真正的模型文件扩展名
-        valid_extensions = {'.gguf', '.safetensors', '.ckpt', '.pt', '.bin', '.pth', '.onnx', '.pkl'}
         base, ext = os.path.splitext(text)
-        if ext not in valid_extensions:
+        if ext not in VALID_EXTENSIONS:
             # 不是有效的模型扩展名，保留原始文本
             base = text
         
@@ -492,8 +508,7 @@ class AdvancedTokenizer:
         base_name = '_'.join(unique_parts)
         
         # 3. 噪声词过滤
-        noise_words = {'average', 'rank', 'ranrank', 'merged', 'merged', 'combined'}
-        unique_parts = [p for p in unique_parts if p.lower() not in noise_words]
+        unique_parts = [p for p in unique_parts if p.lower() not in NOISE_WORDS]
         
         normalized_name = base_name.lower()
         
@@ -682,8 +697,9 @@ class AdvancedTokenizer:
                 seen.add(t)
                 unique_terms.append(term.strip())
         
-        # 限制候选词数量
-        return unique_terms[:5]
+        # 限制候选词数量（上限来自统一配置 searcher.search_term_limit）
+        search_term_limit = get_searcher_config().get("search_term_limit", 5)
+        return unique_terms[:search_term_limit]
 
     @staticmethod
     def detect_base_model(filename):
@@ -790,8 +806,7 @@ class AdvancedTokenizer:
 
         # 2. 查表 (模糊变体匹配)
         # 尝试移除精度后缀再匹配
-        precision_suffixes = ['-fp8', '-fp16', '-bf16', '_fp8', '_fp16', '_bf16', '.fp8', '.fp16', '.bf16']
-        for suffix in precision_suffixes:
+        for suffix in PRECISION_SUFFIXES:
             if base_lower.endswith(suffix):
                 stripped = base_lower[:-len(suffix)]
                 for key, repo_id in COMFYUI_POPULAR_MODELS.items():
@@ -895,7 +910,7 @@ class AdvancedTokenizer:
         # 特殊精度 (bf16, fp8, int8) 必须严格匹配
         # 如果 A 指定了 bf16，而 B 没有指定（或指定了其他的），则不匹配
         # (fp16/fp32 较为通用，文件名常省略，故不做单侧强制)
-        STRICT_PRECISIONS = {'bf16', 'fp8', 'int8', 'int4', 'q8'}
+        # STRICT_PRECISIONS 已由统一配置提供（模块级常量，见文件顶部）
         
         # Case A: Target has strict precision, Candidate missing or different
         if quant_a in STRICT_PRECISIONS:
