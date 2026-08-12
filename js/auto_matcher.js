@@ -759,20 +759,63 @@ function showResultsDialog(matches, downloadResults, unmatched = []) {
             ul.style.paddingLeft = "0";
             ul.style.marginTop = "8px";
             ul.style.listStyle = "none";
-            items.forEach(m => {
+            items.forEach((m, idx) => {
                 const li = document.createElement("li");
                 li.style.marginTop = "6px";
                 li.style.background = "rgba(0,0,0,0.2)";
                 li.style.padding = "8px 10px";
                 li.style.borderRadius = "6px";
                 li.style.border = "1px solid rgba(255,255,255,0.03)";
-                li.innerHTML = `
-                    <div style="font-size:12px; color:#aaa; text-decoration:line-through; margin-bottom:2px;">${m.original}</div>
+                li.style.display = "flex";
+                li.style.alignItems = "center";
+                li.style.justifyContent = "space-between";
+                li.style.gap = "8px";
+
+                // 左侧：原文 → 匹配结果
+                const textDiv = document.createElement("div");
+                textDiv.style.flex = "1";
+                textDiv.style.minWidth = "0";
+                textDiv.innerHTML = `
+                    <div style="font-size:12px; color:#aaa; text-decoration:line-through; margin-bottom:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.original}</div>
                     <div style="color:#a5d6a7; font-weight:600; font-size:13px; display:flex; align-items:center;">
                         <span style="margin-right:6px;">↪</span> ${m.new_value}
                         ${m.match_type === 'Exact' ? '<span style="background:rgba(76,175,80,0.2); color:#81c784; padding:1px 5px; border-radius:3px; font-size:10px; margin-left:6px; border:1px solid rgba(76,175,80,0.3);">-- 完全匹配 ! --</span>' : ''}
                     </div>
                 `;
+
+                // 右侧：单个应用按钮
+                const applyBtn = document.createElement("button");
+                applyBtn.innerHTML = "✓ 应用";
+                applyBtn.title = "仅应用此条修复到对应节点";
+                applyBtn.dataset.idx = idx;
+                applyBtn.style.cssText = `
+                    flex-shrink: 0;
+                    padding: 4px 10px;
+                    background: linear-gradient(135deg, #43a047 0%, #388e3c 100%);
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    font-size: 11px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                    transition: transform 0.1s, box-shadow 0.2s;
+                    white-space: nowrap;
+                `;
+                applyBtn.onmousedown = () => applyBtn.style.transform = "scale(0.95)";
+                applyBtn.onmouseup = () => applyBtn.style.transform = "scale(1)";
+                applyBtn.onclick = () => {
+                    applyFixes([m]);
+                    applyBtn.innerHTML = "✅ 已应用";
+                    applyBtn.disabled = true;
+                    applyBtn.style.background = "#444";
+                    applyBtn.style.color = "#aaa";
+                    applyBtn.style.cursor = "default";
+                    applyBtn.style.boxShadow = "none";
+                };
+
+                li.appendChild(textDiv);
+                li.appendChild(applyBtn);
                 ul.appendChild(li);
             });
             content.appendChild(ul);
