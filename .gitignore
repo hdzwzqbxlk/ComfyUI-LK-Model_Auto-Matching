@@ -17,3 +17,9 @@ scripts/verify_fixes.py
 tests/
 .agent/
 
+# 工具 / 代理运行期产物 (不应上传)
+.workbuddy/
+.claude/
+T1.1_*.py
+T1.1_*.json
+
