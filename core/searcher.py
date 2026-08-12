@@ -606,64 +606,106 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         return None
     
     def _is_match(self, file_path, original_lower, original_base, repo_id=None):
-        """[v3.4.1] 智能加权匹配 (Weighted Intersection)"""
+        """[v3.7.0] 精准加权匹配 (Precision Weighted Intersection)
+
+        修复:
+        - Type 冲突硬门控（T2V↔I2V 等）在 fuzzy short-circuit 之前执行
+        - Repo 上下文不再直接并入目标 token 集，改为"文件必须有最低核心重叠 + repo 弥补"
+        - Fuzzy short-circuit 阈值收紧，防止单字符差异（i2v↔t2v）误判
+        """
         file_base = os.path.splitext(os.path.basename(file_path))[0].lower()
-        
-        # 1. 基础模糊匹配 (RapidFuzz) - 快速筛选
+
+        # ── 0. 双方 token 提取（文件级 & 可选 repo 级）──
+        tags_source = self._get_weighted_tokens(original_base)
+        tags_target_file = self._get_weighted_tokens(file_base)
+
+        tags_repo = []
+        if repo_id:
+            repo_name = repo_id.split('/')[-1]
+            tags_repo = self._get_weighted_tokens(repo_name)
+
+        # 核心词 weight >= 6（模型族/版本/尺寸）
+        core_source = {t['token'] for t in tags_source if t['weight'] >= 6}
+        core_file   = {t['token'] for t in tags_target_file if t['weight'] >= 6}
+        core_repo   = {t['token'] for t in tags_repo if t['weight'] >= 6}
+
+        # 类型词 weight == 4（t2v / i2v / lora / controlnet / inpaint / vae）
+        # 注意：_get_weighted_tokens 对 i2v/t2v 等混合编码提取不稳定，故 type gate 用独立正则
+        type_source = {t['token'] for t in tags_source if t['weight'] == 4}
+        type_file   = {t['token'] for t in tags_target_file if t['weight'] == 4}
+
+        # ── 1. Type 冲突 HARD gate（在任何 fuzzy 匹配之前）──
+        # 使用直接子串正则检测（不依赖 _get_weighted_tokens 的类型词提取）
+        _TYPE_REGEX_MAP = {
+            't2v': re.compile(r't2v|text.?to.?video'),
+            'i2v': re.compile(r'i2v|image.?to.?video'),
+            'lora': re.compile(r'lora(?![a-z])'),       # 避免 "loral" 误匹配
+            'controlnet': re.compile(r'control[_-]?net'),
+            'inpaint': re.compile(r'inpaint'),
+            'vae': re.compile(r'vae(?![a-z])'),
+        }
+        def _detect_types(text, regex_map):
+            return {key for key, pat in regex_map.items() if pat.search(text)}
+
+        raw_type_source = _detect_types(original_base, _TYPE_REGEX_MAP)
+        raw_type_file   = _detect_types(file_base, _TYPE_REGEX_MAP)
+
+        # 合并 token-based 和 regex-based 类型检测结果（任一有信号即参与判定）
+        all_type_source = type_source | raw_type_source
+        all_type_file   = type_file | raw_type_file
+
+        if all_type_source and all_type_file:
+            _TYPE_CONFLICT_PAIRS = [
+                {'t2v', 'i2v'},
+                {'lora', 'controlnet'},
+            ]
+            for pair in _TYPE_CONFLICT_PAIRS:
+                src_hit = bool(all_type_source & pair)
+                tgt_hit = bool(all_type_file & pair)
+                if src_hit and tgt_hit and not (all_type_source & all_type_file):
+                    logger.debug(
+                        f"  [TypeConflict] '{file_base}' vs '{original_base}' "
+                        f"-> rejected (source={all_type_source}, target={all_type_file})"
+                    )
+                    return False
+
+        # ── 2. Fuzzy 快速筛选（受 type gate 保护后）──
         p_score, t_score = 0, 0
         try:
             from rapidfuzz import fuzz
-            # partial_ratio: 宽容匹配 (85 -> 65 以适应 rCM 这种长尾词)
             p_score = fuzz.partial_ratio(original_base, file_base)
             t_score = fuzz.token_set_ratio(original_base, file_base)
-            
-            # [Debug]
+
             if p_score > 50 or t_score > 50:
                 logger.debug(f"  [AlgoDebug] '{file_base}' vs '{original_base}' -> P:{p_score}, T:{t_score}")
-            
-            # 如果分数非常高，直接通过
-            if p_score >= 90 or t_score >= 95:
+
+            # 收紧短路阈值：要求近乎完全匹配才跳过加权检查
+            # （旧阈值 90/95 会把 Wan-I2V-14B <-> Wan-T2V-14B 放行）
+            if p_score >= 95 and t_score >= 98:
                 return True
-                
+
         except ImportError:
             pass
 
-        # 2. 智能核心词匹配 (Weighted Intersection)
-        # 解决: wan2.1_t2v_14b vs Wan_2.1_T2V_14B_rCM (rCM 导致模糊匹配分低)
-        tags_source = self._get_weighted_tokens(original_base)
-        tags_target = self._get_weighted_tokens(file_base)
-        
-        # [v3.4.1] Add Repo Context (e.g. Wan2.1-T2V-14B repo contains model.safetensors)
-        if repo_id:
-             # Remove Owner from Repo ID? "Wan-AI/Wan2.1" -> "Wan2.1"
-             repo_name = repo_id.split('/')[-1]
-             tags_repo = self._get_weighted_tokens(repo_name)
-             tags_target.extend(tags_repo)
-        
-        # 提取高权重核心词 (Weight >= 6: Core, Version, Size)
-        core_source = {t['token'] for t in tags_source if t['weight'] >= 6}
-        core_target = {t['token'] for t in tags_target if t['weight'] >= 6}
-        
-        if not core_source: # 如果没有核心词，回退到普通逻辑
+        # ── 3. 加权核心词匹配（主路径）──
+        if not core_source:
             return p_score >= 80
-            
-        # 检查核心词覆盖率
-        # 目标必须包含源文件所有的核心词 (Wan, 2.1, 14B)
-        missing_cores = core_source - core_target
-        
-        # 允许缺失 0 个核心词 (严格模式)
-        if not missing_cores:
-            # 进一步检查次要词 T2V/I2V (Weight 4)
-            type_source = {t['token'] for t in tags_source if t['weight'] == 4}
-            type_target = {t['token'] for t in tags_target if t['weight'] == 4}
-            
-            if type_source and not (type_source & type_target):
-                # 如果源有 T2V 但目标没有 (或者不匹配)，则判定失败
-                # 例如: Wan 2.1 I2V vs Wan 2.1 T2V
-                return False
-                
+
+        # 3a. 文件自身核心词必须覆盖全部源核心词
+        missing_from_file = core_source - core_file
+        if not missing_from_file:
+            # 文件包含所有核心词 -> 精确匹配（type 已在 step 1 检过）
             return True
-            
+
+        # 3b. 文件缺核心词 -> repo 可弥补，但要求文件至少有 50% 重叠
+        # （防止同仓库内完全不相关的文件被 repo 名"带进去"）
+        if repo_id and core_repo:
+            missing_with_repo = core_source - core_file - core_repo
+            if not missing_with_repo:
+                overlap_ratio = len(core_source & core_file) / len(core_source)
+                if overlap_ratio >= 0.5:
+                    return True
+
         return False
     
     def _build_result(self, model_id, file_path, score):

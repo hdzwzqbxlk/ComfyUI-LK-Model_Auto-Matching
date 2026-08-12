@@ -253,12 +253,9 @@ class TestHuggingFaceProvider(unittest.TestCase):
 class TestHuggingFaceFileSearchLogic(unittest.TestCase):
     """HFFileSearch 的纯逻辑（不创建 session、不触网）。
 
-    已知弱点（非本轮修复，标注待后续 T2.x 处理）：
-      1) repo 上下文过度匹配：_is_match 把 repo_id 名并入 tags_target，
-         导致「同仓库内任意 .safetensors」即便文件名不相关也被判匹配。
-      2) T2V/I2V 不区分：rapidfuzz.token_set_ratio 对单处子串差异
-         (i2v<->t2v) 给 >=95 高分，绕过加权分支的 type 冲突检查。
-         与 T2.2 类型冲突目标有 gap。
+    v3.7.0 已修复：
+      1) repo 上下文过度匹配 → 改为文件必须有 50%+ 核心重叠，repo 仅弥补
+      2) T2V/I2V 不区分 → 新增 regex-based type conflict HARD gate（在 fuzzy 之前）
     """
 
     def setUp(self):
@@ -285,9 +282,8 @@ class TestHuggingFaceFileSearchLogic(unittest.TestCase):
         self.assertEqual(res["score"], 0.98)
         self.assertEqual(res["source"], "HuggingFace (Exact File)")
 
-    def test_search_in_tree_miss(self):
-        # 不相关仓库 + 不相关文件：真实返回 None。
-        # 注：同仓库内 unrelated_model 会因 repo 上下文被误判匹配（弱点 #1，待修复）。
+    def test_search_in_tree_miss_unrelated_repo(self):
+        # 不相关仓库 + 不相关文件 → None
         tree = {"files": ["unrelated_model.safetensors"], "dirs": {}}
         res = self.p._search_in_tree(
             tree, "SomeOrg/UnrelatedRepo",
@@ -296,7 +292,8 @@ class TestHuggingFaceFileSearchLogic(unittest.TestCase):
         )
         self.assertIsNone(res)
 
-    def test_is_match_true(self):
+    def test_is_match_exact(self):
+        # 完全匹配（同仓库同名）
         self.assertTrue(
             self.p._is_match(
                 "Wan2.1-T2V-14B.safetensors",
@@ -306,8 +303,51 @@ class TestHuggingFaceFileSearchLogic(unittest.TestCase):
             )
         )
 
+    def test_is_match_variant_same_repo(self):
+        # 同仓库变体（fp16）→ 应通过（有 100% 核心重叠）
+        self.assertTrue(
+            self.p._is_match(
+                "Wan2.1-T2V-14B-fp16.safetensors",
+                "wan2.1-t2v-14b.safetensors",
+                "wan2.1-t2v-14b",
+                repo_id="Wan-AI/Wan2.1-T2V-14B",
+            )
+        )
+
+    def test_is_match_repo_overmatch_fixed(self):
+        # [v3.7.0 fix] 同仓库内不相关文件 → False（旧版因 repo 名并入会误判 True）
+        self.assertFalse(
+            self.p._is_match(
+                "unrelated_model.safetensors",
+                "wan2.1-t2v-14b.safetensors",
+                "wan2.1-t2v-14b",
+                repo_id="Wan-AI/Wan2.1-T2V-14B",
+            )
+        )
+
+    def test_is_match_type_conflict_i2v_t2v(self):
+        # [v3.7.0 fix] I2V vs T2V 类型冲突 → False（旧版 fuzzy 短路会误判 True）
+        self.assertFalse(
+            self.p._is_match(
+                "Wan2.1-I2V-14B.safetensors",
+                "wan2.1-t2v-14b.safetensors",
+                "wan2.1-t2v-14b",
+            )
+        )
+
+    def test_is_match_type_conflict_i2v_t2v_with_repo(self):
+        # [v3.7.0 fix] 即使在同一仓库，I2V vs T2V 也应被 type gate 拦截
+        self.assertFalse(
+            self.p._is_match(
+                "Wan2.1-I2V-14B.safetensors",
+                "wan2.1-t2v-14b.safetensors",
+                "wan2.1-t2v-14b",
+                repo_id="Wan-AI/Wan2.1-T2V-14B",
+            )
+        )
+
     def test_is_match_core_missing(self):
-        # 目标文件无任何核心词（无 14b 等）→ 应判失败（现有逻辑能正确处理）。
+        # 目标文件无任何核心词 → 失败
         self.assertFalse(
             self.p._is_match(
                 "tiny_model.safetensors",
