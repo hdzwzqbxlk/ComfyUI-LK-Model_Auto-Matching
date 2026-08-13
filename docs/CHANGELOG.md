@@ -8,6 +8,7 @@
 ### Added
 - **标准化研发流程与文档**: 新增项目级技能 `lk-dev-standard`、仓库 `CONTRIBUTING.md`、`.github/pull_request_template.md`，并将 `CHANGELOG.md` 顶部改为 Keep a Changelog 风格的 `Unreleased` 段。PR 机械步骤统一委托 `pr-delivery` 技能（真实 git 状态提取 + 三级降级 + 合入自动清分支）。
 - **网络模型匹配轻量化可行性计划**: 新增 `docs/MODEL_MATCHING_FEASIBILITY.md`——深度调研类同项目（ComfyUI-Manager / Civitai API 集成 / Comfy-Org 官方管线等 8+1）、国内镜像生态（hf-mirror / ModelScope / TUNA / Liblib / Civitai）、分层精准匹配架构（L0 本地 → L1 注册表 → L2 确定性镜像 → L3 Civitai API → L4 兜底）与 P1–P7 路线图；评估 ModelScope 重要等级由 L4 提级至 L2（国内首选镜像，与 hf-mirror 并列）。
+- **镜像感知 URL 重写（路线图 P2-L2 / P3 核心）**: 新增 `core/mirror.py`（`rewrite_hf_url` / `rewrite_modelscope_url`），将 HuggingFace / ModelScope 下载 URL 路由到用户配置的镜像端点（`HF_ENDPOINT` / `MODELSCOPE_ENDPOINT`，含环境变量 `LK_HF_ENDPOINT` / `LK_MODELSCOPE_ENDPOINT`）。接入 `models_db_reader._enrich_info`、`database._enrich_external_info` 与 Kijai 兜底、`searcher` 的 HF 精确文件匹配与 ModelScope 直链。**端点未配置时原样透传，对既有行为零改变**；CN 用户设 `HF_ENDPOINT=https://hf-mirror.com` 即走国内镜像。新增 `tests/test_mirror.py` 覆盖透传 / 重写 / 非目标域不动。
 
 ## [3.6.2] - 2026-07-24
 ### Optimized

@@ -16,9 +16,11 @@ logger = logging.getLogger(__name__)
 try:
     from .utils import AdvancedTokenizer
     from .models_db_reader import find_best_match_in_db
+    from .mirror import rewrite_hf_url, rewrite_modelscope_url
 except ImportError:
     from utils import AdvancedTokenizer
     from models_db_reader import find_best_match_in_db
+    from mirror import rewrite_hf_url, rewrite_modelscope_url
 
 class BaseProvider:
     def __init__(self, config=None):
@@ -714,7 +716,7 @@ class HuggingFaceFileSearchProvider(BaseProvider):
             "source": "HuggingFace (Exact File)",
             "name": model_id,
             "filename": file_path,
-            "url": f"https://huggingface.co/{model_id}/resolve/main/{file_path}",
+            "url": rewrite_hf_url(f"https://huggingface.co/{model_id}/resolve/main/{file_path}"),
             "pageUrl": f"https://huggingface.co/{model_id}/tree/main",
             "score": score
         }
@@ -912,7 +914,7 @@ class ModelScopeFileSearchProvider(BaseProvider):
             if p_score > 60:
                 # Direct Download Link Generation
                 # Format: https://modelscope.cn/api/v1/models/{repo_id}/repo?Revision=master&FilePath={file_path}
-                download_url = f"https://modelscope.cn/api/v1/models/{repo_id}/repo?Revision=master&FilePath={file_path}"
+                download_url = rewrite_modelscope_url(f"https://modelscope.cn/api/v1/models/{repo_id}/repo?Revision=master&FilePath={file_path}")
                 
                 results.append({
                     "source": "ModelScope (Direct)",

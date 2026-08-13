@@ -73,6 +73,13 @@ _DEFAULT_CONFIG = {
         "chinese_tokenization": True,
         "version_aware": False,
     },
+    # 镜像端点：国内优先。空字符串 = 使用官方域名（行为不变）。
+    # CN 用户可将 hf_endpoint 设为 https://hf-mirror.com，
+    # modelscope_endpoint 设为 https://modelscope.ai（国际站）。
+    "mirrors": {
+        "hf_endpoint": "",
+        "modelscope_endpoint": "",
+    },
     "tokenizer": {},   # populated from core/data/models_data.json at load time
     "secrets": {
         "civitai_api_key": "",
@@ -88,6 +95,8 @@ _ENV_MAP = {
     "LK_SEARCHER_EARLY_STOP": ("searcher", "early_stop_score"),
     "LK_SEARCHER_CACHE_TTL": ("searcher", "cache_ttl"),
     "LK_SEARCH_TERM_LIMIT": ("searcher", "search_term_limit"),
+    "LK_HF_ENDPOINT": ("mirrors", "hf_endpoint"),
+    "LK_MODELSCOPE_ENDPOINT": ("mirrors", "modelscope_endpoint"),
 }
 
 # File locations.

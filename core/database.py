@@ -17,6 +17,11 @@ try:
 except ImportError:
     from utils import AdvancedTokenizer
 
+try:
+    from .mirror import rewrite_hf_url
+except ImportError:
+    from mirror import rewrite_hf_url
+
 class ModelDatabase:
     """
     模型数据库管理器 (Phase 2)
@@ -407,7 +412,7 @@ class ModelDatabase:
                             'repo_id': 'Kijai/WanVideo_comfy',
                             'path': map_path,
                             'filename': os.path.basename(map_path),
-                            'url': f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{map_path}",
+                            'url': rewrite_hf_url(f"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/{map_path}"),
                             'pageUrl': 'https://huggingface.co/Kijai/WanVideo_comfy'
                         }, cfg['civitai_score'])
 
@@ -633,7 +638,7 @@ def _enrich_external_info(info):
     repo_id = info.get('repo_id')
     path = info.get('path')
     if repo_id and path:
-        new_info['url'] = f"https://huggingface.co/{repo_id}/resolve/main/{path}"
+        new_info['url'] = rewrite_hf_url(f"https://huggingface.co/{repo_id}/resolve/main/{path}")
         new_info['pageUrl'] = f"https://huggingface.co/{repo_id}/tree/main"
     return new_info
 

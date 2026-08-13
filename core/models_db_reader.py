@@ -1,6 +1,11 @@
 import os
 import json
 
+try:
+    from .mirror import rewrite_hf_url
+except ImportError:
+    from mirror import rewrite_hf_url
+
 DATA_FILE = os.path.join(os.path.dirname(__file__), 'data', 'models_db.json')
 
 _models_db = None
@@ -34,7 +39,7 @@ def _enrich_info(info):
     repo_id = info.get('repo_id')
     path = info.get('path')
     if repo_id and path:
-        new_info['url'] = f"https://huggingface.co/{repo_id}/resolve/main/{path}"
+        new_info['url'] = rewrite_hf_url(f"https://huggingface.co/{repo_id}/resolve/main/{path}")
         new_info['pageUrl'] = f"https://huggingface.co/{repo_id}/tree/main"
     return new_info
 
