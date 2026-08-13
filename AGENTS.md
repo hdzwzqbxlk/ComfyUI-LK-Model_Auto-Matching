@@ -2,7 +2,7 @@
 
 > 本文件是**所有 AI Agent / 大模型进入本项目的唯一入口（Single Source of Truth）**。
 > 任何自动化助手在开始改动代码或文档前，**必须先读本文 + `docs/` 下对应文档**。
-> 根目录严禁新建 `.md`；根仅允许 `AGENTS.md`、`README.md`、`CHANGELOG.md`。
+> 根目录严禁新建 `.md`；根仅允许 `AGENTS.md`（AI 入口 SSOT）、`README.md`（用法）。其余文档一律归类到 `docs/`（含 `CHANGELOG`）。
 
 ## 0. 项目简介
 ComfyUI 自定义节点（custom_nodes）插件，自动匹配 / 修复导入他人工作流时的 "missing model" 红色节点。
@@ -21,7 +21,7 @@ ComfyUI 自定义节点（custom_nodes）插件，自动匹配 / 修复导入他
 | 统一分散配置设计方案（密钥 / 策略分层） | `docs/T1.1_CONFIG_DESIGN.md` |
 | Phase 0 卫生执行报告 | `docs/PHASE0_REPORT.md` |
 | 贡献流程 / 分支规范 / PR 步骤 | `docs/CONTRIBUTING.md` |
-| 版本 / 变更记录（Keep a Changelog） | `CHANGELOG.md` |
+| 版本 / 变更记录（Keep a Changelog） | `docs/CHANGELOG.md` |
 | 前端契约 / 深入研究计划 | `docs/FRONTEND_BACKEND_CONTRACT.md`、`docs/RESEARCH_AND_DEEPENING_PLAN.md` |
 
 ## 2. 代码修改规范（速览）
@@ -32,7 +32,7 @@ ComfyUI 自定义节点（custom_nodes）插件，自动匹配 / 修复导入他
   - ③ 运行时索引 `envs/model_index.json`（被 .gitignore 忽略，首次扫描生成）。
   - 优先级：环境变量 > ② > ①。密钥**绝不**并入已提交单文件。
 - **路径约定**：用户态文件统一在 `envs/`（密钥 + 运行时索引）；源数据 / 样本在 `data/samples/`；文档统一在 `docs/`。
-- **推送前置门禁（Push Gate）**：分支 + PR（PR 机械步骤走 `pr-delivery` 技能），禁止直推 `main`；合入前测试需全绿。
+- **推送前置门禁（Push Gate）**：分支 + PR（PR 机械步骤走 `pr-delivery` 技能），禁止直推 `main`；合入前须**同时满足**：① 测试全绿；② **文档完善自检**——核对 `docs/` 与本次改动一致、路由索引（§1）已同步、`CHANGELOG` 的 `[Unreleased]` 段已补、根目录无新增 `.md`，方可推送 / 开 PR。
 - **本机命令通道**：git / 构建类命令一律走 **pwsh MCP**，不在 Bash 沙箱执行。
 
 ## 3. 文档自愈与更新指令（Self-Maintenance Protocol）
@@ -44,7 +44,7 @@ ComfyUI 自定义节点（custom_nodes）插件，自动匹配 / 修复导入他
 
 ### 3.1 禁止污染根目录
 - 任何设计说明、方案讨论、计划书，**一律**存放于 `docs/`，**严禁在根目录新建 `.md`**。
-- 根目录仅允许长期稳定存在的：`AGENTS.md`、`README.md`、`CHANGELOG.md`。
+- 根目录仅允许长期稳定存在的：`AGENTS.md`（AI 入口 SSOT）、`README.md`（用法）。
 
 ### 3.2 任务结束审查（DoD 之一）
 - 每次完成开发任务后，校验 `docs/` 文档与实际代码一致；发现漂移先改文档，再交付。
