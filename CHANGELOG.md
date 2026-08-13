@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- **Matcher 本地匹配优先 (T2.5, PR #3 待合)**: 将 DB-first（外部知识库 / 网络匹配）从 `match()` 首位移至 Legacy 之后，本地索引候选池（`model_index.json`，含 ComfyUI 默认路径 + 自定义路径）优先匹配。消除"本地有精确文件却被外部标准名抢答"的错配——实测 13 个硬错归零、全通道 DB 命中从 72 降至 1。网络匹配优化（量化 / 代际后缀冲突约束）按指示暂缓。
+- **LiblibProvider 重写 (T2.4, PR #2, 已合入 `main@899880b`)**: 改用 Liblib 内部 JSON API（`api2.liblib.art`），改进模型检索与匹配精度；新增 `regression_tests/provider_check.py` 回归校验锁定重写后行为。
+
+### Added
+- **标准化研发流程与文档**: 新增项目级技能 `lk-dev-standard`、仓库 `CONTRIBUTING.md`、`.github/pull_request_template.md`，并将 `CHANGELOG.md` 顶部改为 Keep a Changelog 风格的 `Unreleased` 段。PR 机械步骤统一委托 `pr-delivery` 技能（真实 git 状态提取 + 三级降级 + 合入自动清分支）。
+
 ## [3.6.2] - 2026-07-24
 ### Optimized
 - **Zero-Hashing Fast Alignment**: Implemented bi-directional path set alignment in `scan_incremental()`. Cleans deleted models in 15ms without re-computing hashes for existing files.
