@@ -150,27 +150,7 @@ class ModelMatcher:
             matching_cfg = self.config.get('matching', {})
             db_cfg = self.config.get('db', {})
 
-            # DB-first lookup: try SQLite external_models if available
-            if matching_cfg.get('use_db_first', True):
-                try:
-                    from .database import db
-                    db_match, db_score = db.lookup_modelsdb(
-                        current_val,
-                        expected_types=item_ctx['expected_types']
-                    )
-                    if db_match and db_score >= db_cfg.get('semantic_min_score', 0.35):
-                        # quick conflict/type check
-                        if not self._check_conflicts(current_val, db_match.get('filename', '')):
-                            cand_type = db_match.get('type', 'unknown')
-                            expected_types = item_ctx['expected_types']
-                            if not expected_types or cand_type in expected_types or cand_type == 'unknown':
-                                best_match = db_match
-                                match_type = "DB"
-                except Exception:
-                    # DB not available or error -> fallback to existing logic
-                    pass
-             
-            # 1. Exact Match (fallback to in-memory index)
+            # 1. Exact Match (本地索引优先：用户本地模型第一顺位)
             if not best_match and matching_cfg.get('use_exact_match', True):
                 exact = self._find_exact_match(item_ctx, ctx)
                 if exact:
@@ -197,6 +177,27 @@ class ModelMatcher:
                 if legacy:
                     best_match = legacy
                     match_type = "Fuzzy" # Legacy is technically fuzzy
+
+            # 5. Network/DB fallback（T2.5 本地优先）：本地四层完全无匹配时才启用。
+            #    此块必须为最后一道，避免本地已有精确文件却被外部标准名抢答。
+            if not best_match and matching_cfg.get('use_db_first', True):
+                try:
+                    from .database import db
+                    db_match, db_score = db.lookup_modelsdb(
+                        current_val,
+                        expected_types=item_ctx['expected_types']
+                    )
+                    if db_match and db_score >= db_cfg.get('semantic_min_score', 0.35):
+                        # quick conflict/type check
+                        if not self._check_conflicts(current_val, db_match.get('filename', '')):
+                            cand_type = db_match.get('type', 'unknown')
+                            expected_types = item_ctx['expected_types']
+                            if not expected_types or cand_type in expected_types or cand_type == 'unknown':
+                                best_match = db_match
+                                match_type = "DB"
+                except Exception:
+                    # DB not available or error -> give up
+                    pass
 
             if best_match:
                 # ensure path/filename keys exist
