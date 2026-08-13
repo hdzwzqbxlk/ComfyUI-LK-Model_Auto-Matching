@@ -93,7 +93,7 @@ _ENV_MAP = {
 # File locations.
 _ROOT = os.path.dirname(os.path.dirname(__file__))
 _DATA = os.path.join(os.path.dirname(__file__), "data")
-_CONFIG_PATH_USER = os.path.join(_ROOT, "config.json")           # secrets (gitignored)
+_CONFIG_PATH_USER = os.path.join(_ROOT, "envs", "config.json")           # secrets (gitignored)
 _CONFIG_PATH_STRATEGY = os.path.join(_DATA, "matcher_config.json")  # strategy
 _CONFIG_PATH_TOKENIZER = os.path.join(_DATA, "models_data.json")    # tokenizer dict
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """获取 Kijai/WanVideo_comfy 所有模型文件名"""
 import json
+import os
 import urllib.request
 
 all_files = []
@@ -27,7 +28,7 @@ print("Fetching Kijai/WanVideo_comfy models...")
 fetch_dir(base_url)
 
 # 保存到文件
-with open('kijai_all_models.txt', 'w', encoding='utf-8') as f:
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "samples", "kijai_all_models.txt"), 'w', encoding='utf-8') as f:
     for file in sorted(all_files):
         f.write(file + '\n')
 

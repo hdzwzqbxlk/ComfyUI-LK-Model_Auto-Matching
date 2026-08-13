@@ -86,7 +86,7 @@ def main():
             time.sleep(0.1) # 避免速率限制
 
     # 保存结果
-    output_file = 'g:/AI_Code/ComfyUI-LK-Model_Auto-Matching/comfy_gguf_models.json'
+    output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "samples", "comfy_gguf_models.json")
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(all_files, f, indent=2, ensure_ascii=False)
 
