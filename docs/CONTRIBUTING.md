@@ -37,14 +37,15 @@ PR 的机械步骤（建 / 合 / 清分支）一律走 `pr-delivery` 技能。
 ## 5. 测试与门禁（Push Gate）
 - 合并前 `pytest` 必绿，否则退回修复、绝不开 PR。
 - 交付报告贴出构建 / 测试退出码作为状态证明。
+- **文档完善自检**（与测试同为门禁）：推送 / 开 PR 前，核对 `docs/` 与改动一致、路由索引（AGENTS.md §1）同步、`CHANGELOG` 的 `[Unreleased]` 段已补、根目录无新增 `.md`。
 
 ## 6. 版本与变更日志
 - SemVer，补丁号优先。
-- `CHANGELOG.md` 顶部保留 `## [Unreleased]` 段；用户可见变更（feat/fix/perf/breaking）必写。
+- `docs/CHANGELOG.md` 顶部保留 `## [Unreleased]` 段；用户可见变更（feat/fix/perf/breaking）必写。
 - 发版时把 `Unreleased` 归入新版本号段并标注日期。
 
 ## 7. 文档
-- `ARCHITECTURE.md`（架构）/ `README.md`（用法）/ `CHANGELOG.md`（变更）/ 本文件（流程）。
+- `docs/ARCHITECTURE.md`（架构）/ `README.md`（用法）/ `docs/CHANGELOG.md`（变更）/ 本文件（流程）。
 - 改了行为，顺手更新对应文档与 CHANGELOG。
 
 ## 红线
