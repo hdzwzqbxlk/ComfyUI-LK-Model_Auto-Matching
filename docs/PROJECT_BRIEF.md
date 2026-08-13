@@ -10,7 +10,7 @@
 ComfyUI 自定义节点（custom_nodes）插件，解决「导入他人工作流后满屏红色 missing model 节点」的痛点：
 
 - **本地匹配（核心）**：扫描本地 `models/` 目录，按文件名 / 变体 / 模糊相似度，把工作流中缺失的模型名替换成本地已有文件。
-- **全网搜索（兜底）**：本地没有时，并发搜索 Civitai / HuggingFace / ModelScope / Liblib / CNB / Google / DuckDuckGo，返回可下载链接。
+- **全网结构化搜索（兜底）**：本地没有时，并发搜索 Civitai / HuggingFace / ModelScope / Liblib / CNB 等结构化源（API 按名 + 哈希精确），返回可下载链接；已移除 Google / DuckDuckGo 泛网页搜索。
 - **安全确认**：所有改动先弹窗展示 `Original -> New`，用户点确认才生效，不静默改写。
 
 入口：ComfyUI 顶部菜单的 **「LK 🪄 Auto Match」** 按钮（前端在 `js/auto_matcher.js`）。
@@ -87,7 +87,7 @@ ComfyUI 自定义节点（custom_nodes）插件，解决「导入他人工作流
 |------|------|------|------|
 | `core/scanner.py` | 303 | 遍历 `folder_paths` 的 15 类模型目录，增量索引，自愈擦除 | `ModelScanner` / `ModelIndex` / `scan_incremental` / `calculate_fast_hash` / `find_local_file` |
 | `core/matcher.py` | 553 | 本地匹配引擎，5 级策略 + 冲突守卫 + 倒排索引 | `ModelMatcher.match` / `_find_exact/fuzzy/variant/legacy_match` / `_check_conflicts` / `_build_index` |
-| `core/searcher.py` | 1484 | 网络搜索编排 + 8 个 Provider | `ModelSearcher.search`；`CivitaiProvider`/`HuggingFaceProvider`/`ModelScopeFileSearchProvider`/`LiblibProvider`/`CNBProvider`/`GoogleOmniProvider`/`DuckDuckGoProvider`/`CivitaiHashProvider` |
+| `core/searcher.py` | 1365 | 网络搜索编排 + 6 个 Provider | `ModelSearcher.search`；`CivitaiProvider`/`HuggingFaceProvider`/`ModelScopeFileSearchProvider`/`LiblibProvider`/`CNBProvider`/`CivitaiHashProvider` |
 | `core/utils.py` | 1079 | 分词 + 相似度核心大脑 | `AdvancedTokenizer.tokenize` / `get_core_tokens` / `get_model_format` / `extract_search_terms` / `detect_base_model` / `calculate_similarity`；常量 `NOISE_SUFFIXES`/`PROTECTED_TERMS`/`COMFYUI_POPULAR_MODELS`(197) |
 | `core/database.py` | 598 | SQLite 外部模型库管理 | `ModelDatabase`；表 `models`/`file_hashes`/`aliases`/`external_models`；`lookup_modelsdb` / `import_models_db_json` |
 | `core/models_db_reader.py` | 100 | 读 `models_db.json`，运行时搜索兜底 | `find_best_match_in_db`（JSON 版，searcher 实际调用） |
@@ -144,7 +144,7 @@ core/data/models.db        (45KB,  2026-02-01)  ← matcher 运行时读 (lookup
 
 ### P2 — 卫生 / 可维护性
 - **[归档] `scripts/` 下 10 个诊断/探索脚本**：`diag_modelscope.py` / `explore_modelscope.py` / `inspect_modelscope_sdk.py` / `verify_*.py` / `test_cnb.py` / `test_tokenizer.py` 带探索性质，建议移入 `scripts/archive/` 或 `tools/`，避免污染仓库根。
-- **[散落死代码]**：`database.py:197` 残留 `# ... existing code ...`；未用 import（`logging`/`uuid`/`random`）；`HuggingFaceFileSearchProvider._extract_keywords` 末行不可达 `return`；`GoogleOmniProvider._parse_link` 对 HF 仅取 owner 名。
+- **[散落死代码]**：`database.py:197` 残留 `# ... existing code ...`；未用 import（`logging`/`uuid`/`random`）；`HuggingFaceFileSearchProvider._extract_keywords` 末行不可达 `return`。（`GoogleOmniProvider._parse_link` 对 HF 仅取 owner 名 一项已于 P6 移除 GoogleOmniProvider / DuckDuckGoProvider 时解决）
 - **[测试分散]** 测试在 `tests/`（8 文件）与 `regression_tests/`（1 文件）两个目录，确认 pytest 能同时发现两者。
 
 ---
@@ -164,7 +164,7 @@ core/data/models.db        (45KB,  2026-02-01)  ← matcher 运行时读 (lookup
 **明显未覆盖**
 - `CivitaiHashProvider` 哈希精确匹配
 - `HuggingFaceFileSearchProvider` 真实并发目录扫描
-- `ModelScopeFileSearchProvider` / `CNBProvider` / `LiblibProvider` / `DuckDuckGoProvider` 真实网络逻辑（仅 stub 或需 mock）
+- `ModelScopeFileSearchProvider` / `CNBProvider` / `LiblibProvider` 真实网络逻辑（仅 stub 或需 mock）
 - `database.lookup_modelsdb`（含失效的类型过滤分支）
 - SQLite 迁移路径（`ALTER TABLE` 兼容旧库）
 - `ModelSearcher` 智能路由与竞速早停

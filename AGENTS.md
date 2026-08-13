@@ -8,7 +8,7 @@
 ComfyUI 自定义节点（custom_nodes）插件，自动匹配 / 修复导入他人工作流时的 "missing model" 红色节点。
 
 - **本地匹配（核心）**：扫描本地 `models/` 目录，按文件名 / 变体 / 模糊相似度，把工作流中缺失的模型名替换成本地已有文件。
-- **全网搜索（兜底）**：本地没有时，并发搜索 Civitai / HuggingFace / ModelScope / Liblib / Google / DuckDuckGo，返回可下载链接。
+- **全网结构化搜索（兜底）**：本地没有时，并发搜索 Civitai / HuggingFace / ModelScope / Liblib / CNB 等结构化源（API 按名 + 哈希精确），返回可下载链接；已移除 Google / DuckDuckGo 泛网页搜索。
 - **安全确认**：所有改动先弹窗展示 `Original -> New`，用户点确认才生效，不静默改写。
 - **存储**：本地 SQLite（`core/data/models.db`）+ JSON 载荷，由 `build_models_db.py` 从 `data/samples/` 源数据构建。
 

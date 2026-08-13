@@ -8,7 +8,6 @@ T2.3 测试补齐 — Provider 解析逻辑锁定（零联网，全 mock）
   - HuggingFaceProvider    : 文本搜索命中 / 空结果
   - HuggingFaceFileSearchProvider (纯逻辑，不联网) :
         _get_weighted_tokens / _extract_keywords / _search_in_tree / _is_match
-  - DuckDuckGoProvider._parse_link (纯函数) : 各平台 URL 判定
   - ModelScopeFileSearchProvider : mock API + 文件树，端到端解析
   - CNBProvider            : mock 搜索页 HTML，解析 repo 链接
   - LiblibProvider         : mock 内部 JSON API（model/search + getByUuid），解析 uuid→name→pageUrl
@@ -358,41 +357,6 @@ class TestHuggingFaceFileSearchLogic(unittest.TestCase):
                 repo_id="SomeOrg/UnrelatedRepo",
             )
         )
-
-
-class TestDuckDuckGoParseLink(unittest.TestCase):
-    """_parse_link 是纯函数，直接验证各平台 URL 判定。"""
-
-    def setUp(self):
-        self.p = searcher.DuckDuckGoProvider({})
-
-    def test_civitai(self):
-        meta = self.p._parse_link("https://civitai.com/models/123", "wan")
-        self.assertEqual(meta["source"], "Civitai (DDG)")
-
-    def test_huggingface(self):
-        meta = self.p._parse_link("https://huggingface.co/user/repo", "wan")
-        self.assertEqual(meta["source"], "HuggingFace (DDG)")
-
-    def test_cnb(self):
-        meta = self.p._parse_link("https://cnb.cool/ai-models/author/repo", "wan")
-        self.assertEqual(meta["source"], "CNB (DDG)")
-
-    def test_modelscope(self):
-        meta = self.p._parse_link("https://modelscope.cn/models/abc", "wan")
-        self.assertEqual(meta["source"], "ModelScope (DDG)")
-
-    def test_liblib(self):
-        meta = self.p._parse_link("https://www.liblib.art/modelinfo/xyz", "wan")
-        self.assertEqual(meta["source"], "Liblib (DDG)")
-
-    def test_shakker(self):
-        meta = self.p._parse_link("https://www.shakker.ai/models/abc", "wan")
-        self.assertEqual(meta["source"], "Shakker (DDG)")
-
-    def test_unknown_returns_none(self):
-        meta = self.p._parse_link("https://example.com/foo", "wan")
-        self.assertIsNone(meta)
 
 
 class TestModelScopeSearch(unittest.TestCase):

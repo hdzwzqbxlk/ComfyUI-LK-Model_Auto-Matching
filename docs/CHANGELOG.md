@@ -10,6 +10,9 @@
 - **网络模型匹配轻量化可行性计划**: 新增 `docs/MODEL_MATCHING_FEASIBILITY.md`——深度调研类同项目（ComfyUI-Manager / Civitai API 集成 / Comfy-Org 官方管线等 8+1）、国内镜像生态（hf-mirror / ModelScope / TUNA / Liblib / Civitai）、分层精准匹配架构（L0 本地 → L1 注册表 → L2 确定性镜像 → L3 Civitai API → L4 兜底）与 P1–P7 路线图；评估 ModelScope 重要等级由 L4 提级至 L2（国内首选镜像，与 hf-mirror 并列）。
 - **镜像感知 URL 重写（路线图 P2-L2 / P3 核心）**: 新增 `core/mirror.py`（`rewrite_hf_url` / `rewrite_modelscope_url`），将 HuggingFace / ModelScope 下载 URL 路由到用户配置的镜像端点（`HF_ENDPOINT` / `MODELSCOPE_ENDPOINT`，含环境变量 `LK_HF_ENDPOINT` / `LK_MODELSCOPE_ENDPOINT`）。接入 `models_db_reader._enrich_info`、`database._enrich_external_info` 与 Kijai 兜底、`searcher` 的 HF 精确文件匹配与 ModelScope 直链。**端点未配置时原样透传，对既有行为零改变**；CN 用户设 `HF_ENDPOINT=https://hf-mirror.com` 即走国内镜像。新增 `tests/test_mirror.py` 覆盖透传 / 重写 / 非目标域不动。
 
+### Changed
+- **移除 Google / DuckDuckGo 泛网页搜索（路线图 P6）**: 删除 `core/searcher.py` 的 `GoogleOmniProvider` / `DuckDuckGoProvider` 两个泛搜兜底 Provider 及其在 provider 链与中文优先级路由中的引用；同步清理死配置 `config.py` / `matcher_config.json` 的 `google` 键、`regression_tests/provider_check.py` 的 `TestDuckDuckGoParseLink`、以及 AGENTS / README / ARCHITECTURE / PROJECT_BRIEF 的对应描述。以结构化 API 源（Civitai / HuggingFace / ModelScope / Liblib / CNB）替代脆弱的搜索引擎抓取。**取舍：Shakker.ai 此前仅由泛搜顺带覆盖，移除后将不再作为在线匹配源（其从未列入规划的一等源）**。
+
 ## [3.6.2] - 2026-07-24
 ### Optimized
 - **Zero-Hashing Fast Alignment**: Implemented bi-directional path set alignment in `scan_incremental()`. Cleans deleted models in 15ms without re-computing hashes for existing files.
