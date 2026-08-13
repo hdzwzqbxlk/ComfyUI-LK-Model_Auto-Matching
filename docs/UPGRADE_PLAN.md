@@ -29,7 +29,7 @@
 | fullstack-dev 原则 | 当前状态 | 升级动作 |
 |---|---|---|
 | 分层：Controller→Service→Repository | ✅ 已基本分层（`__init__.py` 路由 → `matcher/searcher` → `database/scanner`）。但 `__init__.py` 路由内嵌了少量逻辑 | 路由只做解析/校验/调用，业务全在 Service 层 |
-| 集中、类型化、fail-fast 配置 | ⚠️ 两套配置：根 `config.json`（token）+ `core/data/matcher_config.json`（策略），分散读取 | 统一为单一配置层，启动时校验 |
+| 集中、类型化、fail-fast 配置 | ⚠️ 两套配置：`envs/config.json`（token）+ `core/data/matcher_config.json`（策略），分散读取 | 统一为单一配置层，启动时校验 |
 | 类型化错误 + 全局处理 | ❌ `__init__.py` 全部 `except Exception as e: print(...)`，无一致错误信封 | 结构化 JSON 日志 + `{error, code, detail}` 信封 |
 | 数据迁移纪律 | ⚠️ `database.py` 用 `ALTER TABLE` 静默兼容旧库 | 显式迁移版本号 + 迁移脚本 |
 | 前端-后端类型契约 | ❌ 6 个路由与 `js/auto_matcher.js` 字段靠约定（`matched_value/path/match_type/type`） | 建立共享 schema / 类型约定 |
@@ -96,7 +96,7 @@
 **目标（G5）**：配置/日志/契约/单数据源，为持续迭代打底（fullstack-dev 视角）。
 
 - **T1.1 配置统一（fullstack-dev §2）**
-  - 合并根 `config.json` 与 `core/data/matcher_config.json` 为单一配置层；集中读取、启动校验（fail-fast）、类型转换在配置层完成。
+  - 合并`envs/config.json` 与 `core/data/matcher_config.json` 为单一配置层；集中读取、启动校验（fail-fast）、类型转换在配置层完成。
 - **T1.2 错误处理与日志（fullstack-dev §3/§7）**
   - `__init__.py` 的 `print` 改为结构化 JSON 日志（带 request_id 风格上下文）；定义 `AppError` 风格错误层次与一致响应信封 `{error, code, detail}`；不向客户端暴露堆栈。
 - **T1.3 数据单源（最关键，G1 一致性）**

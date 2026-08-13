@@ -24,7 +24,7 @@ def fetch_civitai_models(limit=100):
     }
     
     # Load config
-    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "envs", "config.json")
     api_key = ""
     try:
         with open(config_path, 'r') as f:

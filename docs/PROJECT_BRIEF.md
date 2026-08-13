@@ -95,7 +95,7 @@ ComfyUI 自定义节点（custom_nodes）插件，解决「导入他人工作流
 | `js/auto_matcher.js` | 1117 | 前端 UI + API 调用 | 菜单按钮、弹窗、确认、复制缺失列表、MutationObserver 残窗清理 |
 
 **两套配置（新人易混）**：
-- 根 `config.json`：`civitai_api_key` / `huggingface_token`（给网络搜索用）
+- `envs/config.json`：`civitai_api_key` / `huggingface_token`（给网络搜索用）
 - `core/data/matcher_config.json`：匹配开关 + 阈值（db-first、各 cutoff、type 严格度）——由 `core/config.py` 加载，带 `_DEFAULT_CONFIG` 兜底
 
 ---

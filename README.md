@@ -153,7 +153,7 @@ pip install -r requirements.txt
     ```
     (提示：该脚本会自动绕过部分反爬验证，建议定期运行以保持数据库最新)
 
-*   **技术架构**: 深度算法解析请参阅 [ARCHITECTURE.md](ARCHITECTURE.md)。
+*   **技术架构**: 深度算法解析请参阅 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ### 🎮 使用教程
 1.  **加载工作流**: 导入任何包含报错（红色节点）的工作流。

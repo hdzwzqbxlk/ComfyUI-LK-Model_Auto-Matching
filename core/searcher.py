@@ -1353,7 +1353,7 @@ class CNBProvider(BaseProvider):
 
 class ModelSearcher:
     def __init__(self):
-        self.config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+        self.config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "envs", "config.json")
         self.config = self.load_config()
         self.search_cache = {}
         

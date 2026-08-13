@@ -20,7 +20,7 @@ OUTPUT_FILE = os.path.join(ROOT, "core", "data", "models_db.json")
 def collect_models_data():
     models_data = {}
 
-    kijai_path = os.path.join(ROOT, "kijai_all_models.txt")
+    kijai_path = os.path.join(ROOT, "data", "samples", "kijai_all_models.txt")
     if os.path.exists(kijai_path):
         with open(kijai_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -36,7 +36,7 @@ def collect_models_data():
                     "source": "Kijai",
                 }
 
-    comfy_path = os.path.join(ROOT, "comfy_gguf_models.json")
+    comfy_path = os.path.join(ROOT, "data", "samples", "comfy_gguf_models.json")
     if os.path.exists(comfy_path):
         with open(comfy_path, "r", encoding="utf-8") as f:
             data = json.load(f)
