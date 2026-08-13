@@ -23,6 +23,7 @@ ComfyUI 自定义节点（custom_nodes）插件，自动匹配 / 修复导入他
 | 贡献流程 / 分支规范 / PR 步骤 | `docs/CONTRIBUTING.md` |
 | 版本 / 变更记录（Keep a Changelog） | `docs/CHANGELOG.md` |
 | 前端契约 / 深入研究计划 | `docs/FRONTEND_BACKEND_CONTRACT.md`、`docs/RESEARCH_AND_DEEPENING_PLAN.md` |
+| 网络模型匹配轻量化方案 / 可行性计划 / 国内镜像与 Civitai 接入调研 | `docs/MODEL_MATCHING_FEASIBILITY.md` |
 
 ## 2. 代码修改规范（速览）
 - **语言**：中文 UI 文本与代码注释；仅物理路径 / API 变量名 / 技术专有名词保留原样。
