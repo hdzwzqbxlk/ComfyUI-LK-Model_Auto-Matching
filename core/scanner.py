@@ -81,6 +81,7 @@ class ModelIndex:
 
     def save_index(self):
         try:
+            os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
             with open(self.index_file, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
         except Exception as e:

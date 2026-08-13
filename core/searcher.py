@@ -1390,6 +1390,7 @@ class ModelSearcher:
     def save_config(self, new_config):
         self.config.update(new_config)
         try:
+            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4)
         except: pass
