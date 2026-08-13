@@ -116,8 +116,8 @@ L4 其他发现 API（HF API / ModelScope search_model） → 长尾补充 / Civ
 | P3 | 镜像端点接入（`HF_ENDPOINT`/`MODELSCOPE_ENDPOINT`）+ aria2 续传下载 | 改下载器 |
 | P4 | node-type→category 智能落盘路由 | 复用现有归类 |
 | P5 | 别名归一化表 `name_aliases.json` | 新增 |
-| P6 | Civitai API 接入：by-hash 精确解析 + by-name(Meilisearch) 搜索 + CivArchive 兜底；移除 Google/DuckDuckGo 泛搜 | 改 `core/searcher.py` + 新增 `core/civitai_client.py` |
-| P7 | 文档：更新 `docs/`（架构/用法），PR 合入 | 走 Push Gate |
+| P6 ✅ | Civitai API 接入：by-hash 精确解析 + by-name(Meilisearch) 搜索 + CivArchive 兜底；移除 Google/DuckDuckGo 泛搜 | 改 `core/searcher.py`（Civitai by-hash/by-name 此前已实现；本 PR 移除 `GoogleOmniProvider` / `DuckDuckGoProvider` 泛搜分支） |
+| P7 ✅ | 文档：更新 `docs/`（架构/用法），PR 合入 | 走 Push Gate（本 PR 执行，AGENTS/README/ARCHITECTURE/PROJECT_BRIEF 同步去 Google/DuckDuckGo） |
 
 ---
 

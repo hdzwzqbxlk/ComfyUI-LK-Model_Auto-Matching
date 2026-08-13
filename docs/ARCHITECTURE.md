@@ -80,10 +80,10 @@ graph TD
     - 对包含中文的模型名赋予特殊权重。
 
 ### 3.3 全网聚合搜索 (Omni-Search Provider)
-针对模型分散在不同平台的现状，实现了 `GoogleOmniProvider` 和专用 API Provider。
+针对模型分散在不同平台的现状，实现了 Civitai / HuggingFace / ModelScope / Liblib / CNB 等专用 API Provider；已于 P6 移除 `GoogleOmniProvider` / `DuckDuckGoProvider` 泛网页搜索分支。
 
 - **渐进式搜索策略 (Progressive Strategy)**:
-    - **Attempt 1**: 搜索原始文件名 (Raw Stem) -> 命中率高，特别是 Google。
+    - **Attempt 1**: 搜索原始文件名 (Raw Stem) -> 命中率高，特别是 HuggingFace / Civitai 等结构化 API 源。
     - **Attempt 2**: 搜索清洗后的空格分隔名 (Spaced) -> 适合通用搜索。
     - **Attempt 3+**: 搜索深层分词结果 (Deep Tokenized) -> 解决 `wan2.1` 这种复杂命名。
 - **GGUF 优化**:
@@ -100,7 +100,7 @@ graph TD
 - **Python 3.10+**: 核心逻辑。
 - **curl_cffi**: 高级 HTTP 客户端，支持指纹模拟 (替代传统的 requests/aiohttp)。
 - **rapidfuzz** (Optional): 高性能字符串匹配库，比 standard library 快 10-100 倍。
-- **parsel**: 强大的 HTML/XML 解析库 (基于 lxml)，用于 Google/DuckDuckGo 结果提取。
+- **parsel**: 强大的 HTML/XML 解析库 (基于 lxml)，用于搜索结果 HTML 提取（仍被专用 Provider 使用）。
 
 ### 依赖文件规范
 项目严格遵循 `requirements.txt` 管理依赖，并建议使用 `uv` 进行环境锁定：

@@ -61,7 +61,6 @@ _DEFAULT_CONFIG = {
                 "limit": 8,
                 "hash_scores": {"exact": 0.98, "dir": 0.95, "file": 0.92},
             },
-            "google": {"num": 20},
             "liblib": {"limit": 8},
         },
         "providers": {

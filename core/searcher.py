@@ -959,122 +959,6 @@ class ModelScopeFileSearchProvider(BaseProvider):
                 
         return []
 
-class GoogleOmniProvider(BaseProvider):
-    """
-    Search multiple platforms via Google using Parsel for extraction.
-    """
-    def __init__(self, config):
-        super().__init__(config)
-        
-    async def search(self, query, original_filename):
-        results = []
-        try:
-            # 使用域名作为关键词，不使用 site: 语法 (容易触发率限制)
-            # [v3.5.2] Add cnb.cool
-            sites_or_keywords = "liblib OR shakker OR civitai OR huggingface OR modelscope OR cnb.cool"
-            full_query = f"{query} ({sites_or_keywords})"
-            
-            logger.debug(f"[GoogleOmni] Searching: {full_query}")
-            
-            encoded_query = urllib.parse.quote(full_query)
-            url = f"https://www.google.com/search?q={encoded_query}&num=20&hl=en"
-            
-            headers = self._get_headers("https://www.google.com/")
-            
-            # [v3.3.1] 移除延迟，依赖连接复用
-            
-            async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
-                response = await session.get(url)
-                if response.status_code != 200: return []
-                
-                html = response.text
-                selector = Selector(text=html)
-                
-                # Robust extraction using CSS Selectors and Regex Fallback
-                # 1. Standard Google Results: div.g a href
-                # 2. Raw URL regex fallback
-                
-                found_urls = set()
-                
-                # CSS Approach: Select main Result links
-                # Usually: div#search div.g a (but class names change)
-                # Generic: a[href^="http"]:has(h3) -> more robust
-                
-                # Also try generic all links if specific selector fails
-                # FIX: Use 'a::attr(href)' to get ALL links, including relative ones like /url?q=...
-                # Previous 'a[href^="http"]' missed Google's redirect links
-                css_links = selector.css('a::attr(href)').getall()
-                for link in css_links:
-                    # Case 1: Google Redirect Link (/url?q=https://...)
-                    if link.startswith("/url?q="):
-                         match = re.search(r'url\?q=([^"&]+)', link)
-                         if match: 
-                             found_urls.add(urllib.parse.unquote(match.group(1)))
-                    
-                    # Case 2: Direct HTTP Link (e.g. Knowledge Graph, some layouts)
-                    elif link.startswith("http"):
-                         if "google.com" not in link and "googleusercontent" not in link:
-                              found_urls.add(link)
-                
-                original_lower = original_filename.lower()
-                
-                for u in found_urls:
-                    try:
-                        decoded_url = urllib.parse.unquote(u)
-                        if not decoded_url.startswith("http"): continue
-                        
-                        meta = self._parse_link(decoded_url, original_lower)
-                        if meta and meta["score"] > 0.35:
-                            results.append(meta)
-                    except: pass
-                            
-        except Exception as e:
-            logger.exception(f"[GoogleOmni] Error: {e}")
-        return results
-
-    def _parse_link(self, url, original_lower):
-        score = 0
-        name = ""
-        source = "Google"
-        url = url.lower()
-        
-        # Domain parsing
-        if "civitai.com/models/" in url:
-            source = "Civitai (Google)"
-            name = "Civitai Model"
-        elif "huggingface.co" in url:
-            # Allow blob if it is a model file
-            if "blob" in url and not any(ext in url for ext in [".safetensors", ".gguf", ".pt", ".pth", ".bin", ".onnx"]):
-                return None
-            source = "HuggingFace (Google)"
-            name = url.split("huggingface.co/")[-1].split("/")[0]
-        elif "modelscope.cn/models" in url:
-            source = "ModelScope (Google)"
-            name = "ModelScope Model"
-        elif "liblib.art" in url:
-            source = "Liblib (Google)"
-            name = "Liblib Model"
-        elif "shakker.ai" in url:
-            source = "Shakker (Google)"
-            name = "Shakker Model"
-        elif "cnb.cool" in url:
-            source = "CNB (Google)"
-            name = "CNB Model"
-        else:
-            return None
-
-        clean_url = urllib.parse.unquote(url)
-        score = AdvancedTokenizer.calculate_similarity(original_lower, clean_url)
-        
-        return {
-            "source": source,
-            "name": name,
-            "filename": "Direct Link (Click to Visit)",
-            "url": clean_url, 
-            "pageUrl": clean_url,
-            "score": score
-        }
-
 class LiblibProvider(BaseProvider):
     """
     Search models on liblib.art (哩布哩布) via its internal Web API.
@@ -1189,105 +1073,6 @@ class LiblibProvider(BaseProvider):
             logger.exception(f"[LiblibProvider] Error: {e}")
         return results
 
-class DuckDuckGoProvider(BaseProvider):
-    """
-    Search multiple platforms via DuckDuckGo HTML version.
-    This is much more robust against blocking than Google scraping.
-    """
-    def __init__(self, config):
-        super().__init__(config)
-        self.impersonate = None # DDG HTML doesn't need chrome impersonation, just standard headers
-        
-    async def search(self, query, original_filename):
-        results = []
-        try:
-            # 使用域名作为关键词，不使用 site: 语法 (DDG 对 site: 支持不稳定)
-            sites = "liblib OR shakker OR civitai OR huggingface OR modelscope OR cnb.cool"
-            full_query = f"{query} ({sites})"
-            
-            logger.debug(f"[DuckDuckGo] Searching: {full_query}")
-            
-            url = "https://html.duckduckgo.com/html/"
-            data = {"q": full_query}
-            
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://html.duckduckgo.com/"
-            }
-            
-            # [v3.3.1] 删除延迟，依赖连接复用
-            
-            async with AsyncSession(impersonate=self.impersonate, headers=headers, timeout=self.timeout) as session:
-                response = await session.post(url, data=data)
-                if response.status_code != 200: 
-                    logger.warning(f"[DuckDuckGo] Status {response.status_code}")
-                    return []
-                
-                html = response.text
-                selector = Selector(text=html)
-                
-                # DDG HTML results
-                # div.result -> a.result__a (title), a.result__url (url)
-                result_divs = selector.css('div.result')
-                
-                original_lower = original_filename.lower()
-                
-                for div in result_divs:
-                    raw_url = div.css('a.result__a::attr(href)').get()
-                    if not raw_url: continue
-                    
-                    decoded_url = urllib.parse.unquote(raw_url)
-                    if not decoded_url.startswith("http"): continue
-                    
-                    meta = self._parse_link(decoded_url, original_lower)
-                    if meta and meta["score"] > 0.35:
-                        results.append(meta)
-                            
-        except Exception as e:
-            logger.exception(f"[DuckDuckGo] Error: {e}")
-        return results
-
-    def _parse_link(self, url, original_lower):
-        # Reuse logic from GoogleOmniProvider via helper or copy
-        # For now, duplicate standard parsing logic for self-containment
-        name = "Online Model"
-        source = "DuckDuckGo"
-        url_lower = url.lower()
-        
-        if "civitai.com/models/" in url_lower:
-            source = "Civitai (DDG)"; name = "Civitai Model"
-        elif "huggingface.co" in url_lower:
-            if "blob" in url_lower and not any(ext in url_lower for ext in [".safetensors", ".gguf", ".pt", ".pth", ".bin", ".onnx"]): return None
-            source = "HuggingFace (DDG)"
-            # Fix: Extract full repo "user/repo" not just "user"
-        elif "cnb.cool" in url_lower:
-            source = "CNB (DDG)"
-            name = "CNB Model" 
-            # url_lower: https://huggingface.co/FX-FeiHou/wan2.2-Remix/...
-            parts = url_lower.split("huggingface.co/")[-1].split("/")
-            if len(parts) >= 2:
-                name = f"{parts[0]}/{parts[1]}"
-            else:
-                name = parts[0]
-        elif "modelscope.cn/models" in url_lower:
-            source = "ModelScope (DDG)"; name = "ModelScope Model"
-        elif "liblib.art" in url_lower:
-            source = "Liblib (DDG)"; name = "Liblib Model"
-        elif "shakker.ai" in url_lower:
-            source = "Shakker (DDG)"; name = "Shakker Model"
-        else: return None
-
-        score = AdvancedTokenizer.calculate_similarity(original_lower, urllib.parse.unquote(url_lower))
-        
-        return {
-            "source": source,
-            "name": urllib.parse.unquote(url).split('/')[-1] if '/' in url else url,
-            "filename": "Direct Link (Click to Visit)",
-            "url": urllib.parse.unquote(url),
-            "pageUrl": urllib.parse.unquote(url),
-            "score": score
-        }
-
 class CNBProvider(BaseProvider):
     """
     [v3.5.1] CNB (cnb.cool) Provider - Scrapes repositories from CNB ai-models group.
@@ -1362,10 +1147,11 @@ class ModelSearcher:
         # Provider 优先级 [v3.0.1]:
         # 1. CivitaiHashProvider (100% 精确匹配，需要本地文件路径)
         # 2. HuggingFace File Search (精确文件名匹配)
-        # 3. Civitai (文本搜索) > HuggingFace API > Liblib > ModelScope > Google (兜底)
-        
+        # 3. Civitai (文本搜索) > HuggingFace API > Liblib > ModelScope > CNB (结构化源兜底)
+        #    [P6] 已移除 Google / DuckDuckGo 泛网页搜索分支（重、易碎、无结构化结果）
+
         self.hash_provider = CivitaiHashProvider(self.config)  # [v3.0.1] SHA256 精确匹配
-        
+
         self.providers = [
             HuggingFaceFileSearchProvider(self.config),  # [v3.0] 精确文件名搜索
             CivitaiProvider(self.config),
@@ -1373,8 +1159,6 @@ class ModelSearcher:
             LiblibProvider(self.config),
             ModelScopeFileSearchProvider(self.config),   # [v3.5.0] ModelScope Direct File Search
             CNBProvider(self.config), # [v3.5.2] CNB Provider
-            GoogleOmniProvider(self.config),
-            DuckDuckGoProvider(self.config)
         ]
 
 
@@ -1493,7 +1277,7 @@ class ModelSearcher:
             # 中文模型 -> 优先 Liblib/ModelScope/CNB
             priority_providers = [
                 p for p in self.providers 
-                if any(name in type(p).__name__.lower() for name in ['liblib', 'modelscope', 'cnb', 'google', 'duckduck'])
+                if any(name in type(p).__name__.lower() for name in ['liblib', 'modelscope', 'cnb'])
             ]
             secondary_providers = [p for p in self.providers if p not in priority_providers]
             ordered_providers = priority_providers + secondary_providers

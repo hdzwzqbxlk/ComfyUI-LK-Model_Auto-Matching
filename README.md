@@ -102,7 +102,7 @@ pip install -r requirements.txt
 *   **🔍 全网聚合搜索 (All-Network Aggregation)**
     - **竞速模式 (Race Mode)**: 同时并发请求 Civitai, HuggingFace, Liblib, ModelScope，毫秒级响应。
     - **API 优先**: 优先使用官方 API 进行精确检索（支持 Civitai Hash, HF File Search）。
-    - **兜底保障**: 当垂直网站无结果时，自动调用 Google/DuckDuckGo 进行全网补漏。
+    - **兜底保障**: 当垂直网站无结果时，回退到 Civitai 哈希精确解析与注册表/镜像确定性源，不再使用 Google/DuckDuckGo 泛网页搜索。
 
 *   **🛡️ 安全可靠**
     - **零依赖**: 纯 Python 实现，无需复杂环境配置。
