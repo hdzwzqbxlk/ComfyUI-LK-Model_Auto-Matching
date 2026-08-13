@@ -11,15 +11,17 @@ T2.3 测试补齐 — Provider 解析逻辑锁定（零联网，全 mock）
   - DuckDuckGoProvider._parse_link (纯函数) : 各平台 URL 判定
   - ModelScopeFileSearchProvider : mock API + 文件树，端到端解析
   - CNBProvider            : mock 搜索页 HTML，解析 repo 链接
-  - LiblibProvider         : mock 搜索页 HTML，解析 /modelinfo/ 链接
+  - LiblibProvider         : mock 内部 JSON API（model/search + getByUuid），解析 uuid→name→pageUrl
 
 设计要点：
   - 所有 HTTP 请求被 MockAsyncSession 拦截，绝不触网。
   - 在 import searcher 之后 patch searcher.AsyncSession，使各 Provider 实例化时
     拿到 Mock，而非真实 curl_cffi.AsyncSession。
-  - 关于 LiblibProvider：它依赖解析静态 HTML 中的 /modelinfo/ 链接；真实 liblib.art
-    搜索页为 JS 动态渲染，静态链接大概率缺失（T2.4 待重写为 API/页面解析）。
-    本测试仅锁定「给定含 /modelinfo/ 链接的 HTML 时能正确解析」这一逻辑本身。
+  - 关于 LiblibProvider（T2.4 已重写为 API 解析）：调用 liblib 内部接口
+    api2.liblib.art/api/www/model/search（返回 uuid 列表）+ /model/getByUuid/{uuid}
+    （补模型名），按 uuid 拼 https://www.liblib.art/modelinfo/{uuid}。匿名可调用、
+    无需 Token。本测试锁死该 JSON 解析路径（含「搜索项自带 name」与「缺 name 走
+    getByUuid 补名」两条分支）。
 """
 
 import sys
@@ -448,27 +450,51 @@ class TestLiblibSearch(unittest.TestCase):
     def setUp(self):
         MockAsyncSession.reset()
 
-    def test_parse_modelinfo_links(self):
-        """锁定：给定含 /modelinfo/ 链接的 HTML，能正确解析出模型条目。
+    def test_search_api_parse(self):
+        """T2.4：锁定 Liblib 内部 JSON API（api2.liblib.art/api/www/model/search
+        + /model/getByUuid）的解析逻辑。零联网，全部 mock。
 
-        注意：真实 liblib.art 搜索页为 JS 动态渲染，静态链接大概率缺失
-        （T2.4 待重写为 API/页面解析）。此测试仅验证解析逻辑本身不被回归破坏。
+        - 搜索响应 data.data[] 含 uuid（及可选 name）；
+        - 缺 name 的候选走 getByUuid 补名；
+        - 按 uuid 拼 pageUrl = https://www.liblib.art/modelinfo/{uuid}；
+        - calculate_similarity 对本地文件名打分，>0.3 才保留。
         """
-        html = (
-            '<html><body>'
-            '<a href="/modelinfo/Wan2.1-T2V-14B">Wan2.1 T2V 14B</a>'
-            '<a href="/modelinfo/AnotherModel">Another</a>'
-            '</body></html>'
-        )
-        MockAsyncSession.set_responder(
-            lambda u, m, k: FakeResponse(200, html, None)
-        )
+        search_payload = {
+            "code": 0,
+            "data": {
+                "hasMore": False,
+                "data": [
+                    {"uuid": "Wan2.1-T2V-14B", "name": "Wan2.1 T2V 14B"},  # 自带 name
+                    {"uuid": "Wan2.1-I2V-14B", "name": ""},              # 无 name → 触发 getByUuid
+                ],
+            },
+        }
+        # 第二条候选缺 name，由 getByUuid 补名（返回与本地文件名高度相似的名称）
+        info_payload = {"code": 0, "data": {"name": "Wan2.1-T2V-14B"}}
+
+        def responder(url, method, kwargs):
+            if "/model/search" in url:
+                return FakeResponse(200, "", search_payload)
+            if "/model/getByUuid/" in url:
+                return FakeResponse(200, "", info_payload)
+            return FakeResponse(404, "", {})
+
+        MockAsyncSession.set_responder(responder)
         results = asyncio.run(
             searcher.LiblibProvider({}).search("Wan2.1", "Wan2.1-T2V-14B.safetensors")
         )
         self.assertTrue(any(r["source"] == "Liblib" for r in results))
-        hit = [r for r in results if r["source"] == "Liblib"][0]
-        self.assertEqual(hit["name"], "Wan2.1-T2V-14B")
+
+        # 命中项 1：搜索项自带 name，无需 getByUuid
+        hit1 = [r for r in results if r["name"] == "Wan2.1 T2V 14B"]
+        self.assertEqual(len(hit1), 1)
+        self.assertEqual(hit1[0]["pageUrl"], "https://www.liblib.art/modelinfo/Wan2.1-T2V-14B")
+        self.assertGreater(hit1[0]["score"], 0.3)
+
+        # 命中项 2：经 getByUuid 补名后保留；pageUrl 取自 uuid 而非 name
+        hit2 = [r for r in results if r["name"] == "Wan2.1-T2V-14B"]
+        self.assertEqual(len(hit2), 1)
+        self.assertEqual(hit2[0]["pageUrl"], "https://www.liblib.art/modelinfo/Wan2.1-I2V-14B")
 
 
 if __name__ == "__main__":
