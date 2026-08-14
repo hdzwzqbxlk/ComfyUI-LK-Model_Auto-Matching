@@ -7,6 +7,12 @@
   - **本地匹配严格化**: 新增「核心身份词覆盖率」硬门槛（`core_coverage_min=0.6`，目标核心词数 ≥ `core_min_tokens=2` 时强制），技术后缀（`fp16`/`fp8`/`bf16`/`safetensors` 等）不计入核心词，无法单独支撑一次匹配；Fuzzy 的 `W_NOISE` 由 `0.1` 降至 `0.05`，`fuzzy_score_cutoff` 60→65、`legacy_score_cutoff` 75→80，使本地匹配更保守。`flux1-dev`↔`flux1-dev-fp8` 等正常变体匹配不受影响。
   - **在线源优先级与组件过滤**: `searcher` 新增 `source_preference`（主模型优先 HuggingFace / ModelScope / CNB 等官方国内镜像）并对默认 Provider 顺序重排；新增组件类别过滤，主模型请求剔除 `text_encoder` / `vae` / `clip` / `dav` 等组件候选（如 `minimax_music3_text_encoder_*`、`minimax_music3_dav`），避免主模型被同名组件抢答。
   - **配置语义澄清**: `use_db_first` 更名为 `use_db_fallback`（语义明确为「本地完全无匹配才回退 DB」），`matcher_config.json` 同步更新；DB 回退仍仅在本地四层全失配后启用。
+- **在线官方镜像优先检索（`priority_organizations`，Searcher Bugfix）**: 针对用户反馈"comfy 官方模型检索不到 / 返回第三方非官方源"，将 Comfy-Org / unsloth 等官方组织作为优先命名空间统一配置（不再逐模型硬编码）。
+  - **根因**: HuggingFace 端此前用全部高权重词（如 `minimax music dit`）做 `author=Comfy-Org` 定向检索，HF 全文检索对过长多词查询极挑剔 → 返回空，实际完全没命中官方组织，全靠泛搜兜底导致精准度差。
+  - **HF 修复**: `_discover_repos` 改用聚焦 top-2 关键词（如 `minimax music`）+ 单族词兜底重试做 `author=Comfy-Org` / `author=unsloth` 定向检索；实测稳定命中 `Comfy-Org/MiniMax-Music-3` 等官方仓库。
+  - **ModelScope 修复**: 新增组织优先检索（只保留 `Path==org` 的仓库），并移除 per-model 硬编码映射（`PRIORITY_REPOS` 的 minimax/music3/h3 条目）——MiniMax 本为"其他组织"放出，硬编码仓库 ID 既不符实际也脆弱。
+  - **配置统一**: `matcher_config.json` 新增 `searcher.priority_organizations.{huggingface, modelscope}`（默认均含 `Comfy-Org` / `unsloth`）；`_apply_namespace_preference` 对其中组织默认加权 `1.12`（可被 `namespace_preference` 覆盖），配置即生效。
+  - **测试**: 新增 `tests/test_bugfix_comfy_org_priority.py`（12 例，含聚焦查询、组织优先级、配置回退、命名空间加权）。
 - **LiblibProvider 重写 (T2.4, PR #2, 已合入 `main@899880b`)**: 改用 Liblib 内部 JSON API（`api2.liblib.art`），改进模型检索与匹配精度；新增 `regression_tests/provider_check.py` 回归校验锁定重写后行为。
 
 ### Added

@@ -97,6 +97,7 @@ graph TD
     - 使用 `curl_cffi` 库模拟 `Chrome 120` 的 TLS 指纹和 HTTP2 特征，有效绕过 Cloudflare 验证。
 - **主模型源优先级与组件过滤 (Main-Model Routing & Component Filter)**:
     - **源优先级 (tier / source_preference)**: 主模型（`diffusion_models` / `unet` / `checkpoints`）默认优先 ComfyUI 官方国内镜像（HuggingFace / ModelScope / CNB），其次 Civitai / Liblib 等社区源；`searcher.source_preference` 对相近分数的候选做加权，让官方镜像源胜出。
+    - **组织优先级 (`priority_organizations`)**: 在 HuggingFace / ModelScope 内部，进一步把 Comfy-Org / unsloth 等官方组织作为优先命名空间检索（HF 用 `author=Comfy-Org` 定向 + 聚焦 top-2 关键词；ModelScope 用 `Path==org` 定向），命中后由 `namespace_preference`（默认加权 1.12，可被覆盖）再排序，确保官方镜像仓库排在原始作者 / 第三方搬运之前。配置统一在 `matcher_config.json` 的 `searcher.priority_organizations.{huggingface, modelscope}`。
     - **组件类别过滤**: 主模型请求（目标文件名不含 `text_encoder` / `vae` / `clip` / `dav` 等组件词）会剔除所有组件候选，避免主模型被同名组件的官方镜像文件（如 `minimax_music3_text_encoder_*`、`minimax_music3_dav`）抢答；目标本身为组件请求时则保留组件候选。
 
 ---

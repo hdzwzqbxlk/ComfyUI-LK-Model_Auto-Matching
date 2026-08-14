@@ -36,6 +36,14 @@
       "Civitai": 0.9,
       "Liblib": 0.9
     },
+    "namespace_preference": {
+      "Comfy-Org": 1.15,
+      "unsloth": 1.08
+    },
+    "priority_organizations": {
+      "huggingface": ["Comfy-Org", "unsloth"],
+      "modelscope": ["Comfy-Org", "unsloth"]
+    },
     "api": {
       "civitai": {
         "url": "https://civitai.com/api/v1/model-versions/by-hash",
