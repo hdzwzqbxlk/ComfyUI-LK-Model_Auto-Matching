@@ -1161,6 +1161,92 @@ class ModelSearcher:
             CNBProvider(self.config), # [v3.5.2] CNB Provider
         ]
 
+        # [Bugfix] 组件类别词正则：名称含这些词的候选属于「组件」（text_encoder /
+        # vae / clip / dav 等），不应作为主模型（diffusion_models / unet / checkpoints）的匹配结果返回。
+        # 注意：正则 ``\b`` 把 ``_`` 视为单词字符，而文件名组件词常以 ``_`` 连接
+        # （如 ``text_encoder`` / ``music3_dav``），``\b`` 锚点在此处失效。故改用
+        # 显式边界：组件词前后必须是字符串边界或非字母数字分隔符（``_-.`` 等）。
+        self._component_re = re.compile(
+            r"(?i)(?<![a-z0-9])("
+            r"text[ _.-]?encoder|textencoders|vae|clip|encoder|"
+            r"tokenizer|embed(dings)?|dav|lm[ _.-]?head|adaptor"
+            r")(?![a-z0-9])"
+        )
+
+    # ----------------------------------------------------------
+    # [Bugfix] 组件类别过滤 + 源优先级加权
+    # ----------------------------------------------------------
+    def _is_component_name(self, name):
+        """判断文件名是否指向模型组件（text_encoder / vae / clip / dav 等）。"""
+        base = os.path.splitext(os.path.basename(name or ""))[0]
+        return bool(self._component_re.search(base))
+
+    def _filter_component_candidates(self, filename, candidates):
+        """主模型请求不应返回 text_encoder / vae / clip / dav 等组件文件。
+
+        - 若目标文件名本身含组件关键词（如 ``..._vae`` / ``..._text_encoder``），
+          视为组件请求，保留组件候选（用户就是要这个组件）。
+        - 否则为主模型请求，剔除所有组件候选，避免主模型被同名组件的官方镜像
+          文件（如 ``minimax_music3_text_encoder_pruned_int8_convrot``、
+          ``minimax_music3_dav``）抢答。
+        """
+        if self._is_component_name(filename):
+            return candidates
+        filtered = []
+        for c in candidates:
+            cand_name = c.get("filename") or c.get("name") or ""
+            if self._is_component_name(cand_name):
+                logger.debug("[AutoMatch] 丢弃组件候选（主模型请求）: %s", cand_name)
+                continue
+            filtered.append(c)
+        return filtered
+
+    def _apply_source_preference(self, candidates):
+        """主模型优先 ComfyUI 官方国内镜像（HuggingFace / ModelScope 等）。
+
+        通过 source 命中加权，让相近分数的候选中官方镜像源胜出；不改变绝对高分项。
+
+        配置来源：优先读自身 ``self.config``（envs/config.json），
+        缺失时回落到全局合并配置 ``get_all_config()``（core/data/matcher_config.json
+        中的 ``searcher.source_preference``），保证在线源优先级在生产环境真正生效。
+        """
+        pref = self.config.get("searcher", {}).get("source_preference", {})
+        if not pref:
+            try:
+                from .config import get_all_config
+                pref = get_all_config().get("searcher", {}).get("source_preference", {})
+            except Exception:
+                pref = {}
+        if not pref:
+            return candidates
+        for c in candidates:
+            src = c.get("source", "") or ""
+            weight = 1.0
+            for key, w in pref.items():
+                if key.lower() in src.lower():
+                    weight = float(w)
+                    break
+            c["score"] = float(c.get("score", 0.0)) * weight
+        return candidates
+
+    def _main_model_provider_order(self):
+        """主模型默认 Provider 优先级：ComfyUI 官方国内镜像（HF / ModelScope / CNB）优先，
+        其次 Civitai / Liblib 等社区源。其余（如未来扩展源）排末位。"""
+        priority = ['huggingfacefilesearch', 'huggingface', 'modelscope', 'cnb']
+        secondary = ['civitai', 'liblib']
+
+        def sort_key(p):
+            name = type(p).__name__.lower()
+            for i, key in enumerate(priority):
+                if key in name:
+                    return (0, i)
+            for i, key in enumerate(secondary):
+                if key in name:
+                    return (1, i)
+            return (2, 0)
+
+        return sorted(self.providers, key=sort_key)
+
 
     def load_config(self):
         if os.path.exists(self.config_path):
@@ -1302,7 +1388,8 @@ class ModelSearcher:
             logger.debug(f"[AutoMatch] FLUX/Global -> 优先 HuggingFace")
             logger.debug(f"[AutoMatch] FLUX/Wan/Qwen 系列 -> 优先 HuggingFace")
         else:
-            ordered_providers = self.providers
+            # [Bugfix] 主模型默认优先 ComfyUI 官方国内镜像（HF / ModelScope / CNB）
+            ordered_providers = self._main_model_provider_order()
         
         # 只使用最优搜索词，所有 Provider 同时启动
         best_term = search_terms[0] if search_terms else base_name
@@ -1322,20 +1409,26 @@ class ModelSearcher:
                 res = await future
                 if res and isinstance(res, list):
                     all_candidates.extend(res)
-                    
+                    # [Bugfix] 主模型请求即时剔除组件候选，避免其触发早停抢答
+                    all_candidates = self._filter_component_candidates(base_name, all_candidates)
+
                     # 早停检查: 任何 Provider 返回高分匹配立即停止
                     all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
                     if all_candidates and all_candidates[0].get("score", 0) >= 0.7:
                         elapsed = time.time() - start_time
                         logger.info(f"[AutoMatch] Fast match in {elapsed:.2f}s: {all_candidates[0]['name']}")
                         break
-                        
+
             except Exception as e:
                 logger.exception(f"[AutoMatch] Provider task failed: {e}")
-        
+
         elapsed = time.time() - start_time
         logger.info(f"[AutoMatch] Completed in {elapsed:.2f}s")
-        
+
+        # [Bugfix] 组件类别二次过滤（幂等）+ 源优先级加权（主模型优先官方国内镜像）
+        all_candidates = self._filter_component_candidates(base_name, all_candidates)
+        all_candidates = self._apply_source_preference(all_candidates)
+
         # Final Sort and Deduplication
         all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
         

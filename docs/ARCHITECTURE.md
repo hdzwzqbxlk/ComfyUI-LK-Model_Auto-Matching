@@ -78,6 +78,10 @@ graph TD
 3.  **混合相似度 (Hybrid Score)**:
     - 结合 `Rapidfuzz` (如果可用) 和 `Jaccard Similarity`。
     - 对包含中文的模型名赋予特殊权重。
+4.  **核心词覆盖率硬门槛 (Core-Coverage Gate)**:
+    - 本地匹配（Fuzzy / Variant / Legacy 三层）在评分之外，强制校验「核心身份词覆盖率」。
+    - 提取目标文件名的核心身份词（排除 `fp16` / `bf16` / `safetensors` 等技术后缀、纯数字与版本号、通用词），候选必须覆盖其中显著比例（默认 ≥ `core_coverage_min=0.6`，且目标核心词数 ≥ `core_min_tokens=2` 时才强制）。
+    - 仅共享 `fp16` / `safetensors` 等后缀、核心身份词（如 `minimax` / `music3` / `dit` vs `sam` / `multiplex`）几乎不重叠的候选被强制拒绝，杜绝「技术后缀相同就匹配」的误配。核心词不足（如极简文件名）时退回既有评分逻辑，避免误杀 `flux1-dev` ↔ `flux1-dev-fp8` 这类正常变体。
 
 ### 3.3 全网聚合搜索 (Omni-Search Provider)
 针对模型分散在不同平台的现状，实现了 Civitai / HuggingFace / ModelScope / Liblib / CNB 等专用 API Provider；已于 P6 移除 `GoogleOmniProvider` / `DuckDuckGoProvider` 泛网页搜索分支。
@@ -91,6 +95,9 @@ graph TD
     - 自动识别 HuggingFace 的 `-GGUF` 仓库后缀 pattern。
 - **反爬虫技术**:
     - 使用 `curl_cffi` 库模拟 `Chrome 120` 的 TLS 指纹和 HTTP2 特征，有效绕过 Cloudflare 验证。
+- **主模型源优先级与组件过滤 (Main-Model Routing & Component Filter)**:
+    - **源优先级 (tier / source_preference)**: 主模型（`diffusion_models` / `unet` / `checkpoints`）默认优先 ComfyUI 官方国内镜像（HuggingFace / ModelScope / CNB），其次 Civitai / Liblib 等社区源；`searcher.source_preference` 对相近分数的候选做加权，让官方镜像源胜出。
+    - **组件类别过滤**: 主模型请求（目标文件名不含 `text_encoder` / `vae` / `clip` / `dav` 等组件词）会剔除所有组件候选，避免主模型被同名组件的官方镜像文件（如 `minimax_music3_text_encoder_*`、`minimax_music3_dav`）抢答；目标本身为组件请求时则保留组件候选。
 
 ---
 

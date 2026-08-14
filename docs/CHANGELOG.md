@@ -3,6 +3,10 @@
 ## [Unreleased]
 ### Fixed
 - **Matcher 本地匹配优先 (T2.5, PR #3, 已合入 `main@8ebeb8c`)**: 将 DB-first（外部知识库 / 网络匹配）从 `match()` 首位移至 Legacy 之后，本地索引候选池（`model_index.json`，含 ComfyUI 默认路径 + 自定义路径）优先匹配。消除"本地有精确文件却被外部标准名抢答"的错配——实测 13 个硬错归零、全通道 DB 命中从 72 降至 1。网络匹配优化（量化 / 代际后缀冲突约束）按指示暂缓。
+- **本地匹配核心词覆盖率硬门槛 + 在线源优先级 (Matcher / Searcher Bugfix)**: 修复 `minimax_music3_dit_fp16` 被误匹配到本地 `sam3.1.multiplex_fp16` 的问题。
+  - **本地匹配严格化**: 新增「核心身份词覆盖率」硬门槛（`core_coverage_min=0.6`，目标核心词数 ≥ `core_min_tokens=2` 时强制），技术后缀（`fp16`/`fp8`/`bf16`/`safetensors` 等）不计入核心词，无法单独支撑一次匹配；Fuzzy 的 `W_NOISE` 由 `0.1` 降至 `0.05`，`fuzzy_score_cutoff` 60→65、`legacy_score_cutoff` 75→80，使本地匹配更保守。`flux1-dev`↔`flux1-dev-fp8` 等正常变体匹配不受影响。
+  - **在线源优先级与组件过滤**: `searcher` 新增 `source_preference`（主模型优先 HuggingFace / ModelScope / CNB 等官方国内镜像）并对默认 Provider 顺序重排；新增组件类别过滤，主模型请求剔除 `text_encoder` / `vae` / `clip` / `dav` 等组件候选（如 `minimax_music3_text_encoder_*`、`minimax_music3_dav`），避免主模型被同名组件抢答。
+  - **配置语义澄清**: `use_db_first` 更名为 `use_db_fallback`（语义明确为「本地完全无匹配才回退 DB」），`matcher_config.json` 同步更新；DB 回退仍仅在本地四层全失配后启用。
 - **LiblibProvider 重写 (T2.4, PR #2, 已合入 `main@899880b`)**: 改用 Liblib 内部 JSON API（`api2.liblib.art`），改进模型检索与匹配精度；新增 `regression_tests/provider_check.py` 回归校验锁定重写后行为。
 
 ### Added
