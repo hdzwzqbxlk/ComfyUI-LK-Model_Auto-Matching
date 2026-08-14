@@ -93,6 +93,48 @@ class TestLocalCoreCoverage(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["matched_value"], "flux1-dev-fp8.safetensors")
 
+    def test_single_word_base_precision_variant_still_matches(self):
+        """回归（QA 反馈的 latent 边角）：单字基本体 + 精度后缀（mycoolmodel_fp16）
+        不应被覆盖率门槛误杀，应正常匹配其本体 mycoolmodel。
+
+        根因：tokenize 把 fp16 拆成 fp + 数字，精度片段 fp 曾被算作核心身份词，
+        导致 target_core={mycoolmodel, fp}（≥2）触发门槛、覆盖率仅 0.5<0.6 被拒。
+        修复后先剥离精度变体词再分词，fp 片段不再泄漏，单字基本体经变体匹配路径命中。
+        """
+        models = [
+            {"filename": "mycoolmodel.safetensors",
+             "path": "D:/models/mycoolmodel.safetensors",
+             "type": "checkpoints"},
+        ]
+        matcher = self._make_matcher(models)
+        items = [{
+            "id": 1,
+            "current": "mycoolmodel_fp16.safetensors",
+            "node_type": "ModelLoader",
+            "widget_name": "diffusion_model",
+        }]
+        result = matcher.match(items)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["matched_value"], "mycoolmodel.safetensors")
+
+    def test_single_word_base_precision_variant_reverse(self):
+        """反向：请求本体 mycoolmodel，本地有带精度后缀的同名文件也应匹配。"""
+        models = [
+            {"filename": "mycoolmodel_fp16.safetensors",
+             "path": "D:/models/mycoolmodel_fp16.safetensors",
+             "type": "checkpoints"},
+        ]
+        matcher = self._make_matcher(models)
+        items = [{
+            "id": 1,
+            "current": "mycoolmodel.safetensors",
+            "node_type": "ModelLoader",
+            "widget_name": "diffusion_model",
+        }]
+        result = matcher.match(items)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["matched_value"], "mycoolmodel_fp16.safetensors")
+
 
 class TestOnlineComponentFilter(unittest.TestCase):
     """在线侧：主模型请求剔除组件候选；组件请求保留组件候选。"""

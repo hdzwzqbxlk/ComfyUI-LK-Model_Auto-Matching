@@ -65,9 +65,18 @@ class ModelMatcher:
 
         用于「核心词覆盖率」硬门槛：候选必须覆盖目标核心身份词的显著比例，
         否则即便共享 fp16 / safetensors 等后缀也强制拒绝。
+
+        [Latent-fix] 分词前先调用 ``_strip_variant_terms`` 剥离精度 / 量化 / 格式等
+        技术变体词。原因：``AdvancedTokenizer.tokenize`` 会把 ``fp16`` / ``bf16``
+        拆成 ``fp`` / ``bf`` + 数字（字母与数字分离），若直接对原串分词，
+        ``fp`` / ``bf`` / ``f`` 这类片段会泄漏为「核心身份词」，导致单字基本体
+        + 精度后缀（如 ``mycoolmodel_fp16``）被覆盖率门槛误杀。复用于变体匹配
+        路径一致的 ``_strip_variant_terms``，从源头消除精度片段，并使覆盖率门槛
+        与 ``get_core_tokens`` 的语义保持一致。
         """
         from .utils import AdvancedTokenizer, NOISE_SUFFIXES
-        tokens = set(AdvancedTokenizer.tokenize(base_name))
+        cleaned = AdvancedTokenizer._strip_variant_terms(base_name)
+        tokens = set(AdvancedTokenizer.tokenize(cleaned))
         core = set()
         for t in tokens:
             if t in NOISE_SUFFIXES:
