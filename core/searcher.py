@@ -383,35 +383,111 @@ class HuggingFaceFileSearchProvider(BaseProvider):
         return [item['token'] for item in weighted if item['weight'] > 1] # Remove Noise
         return [item['token'] for item in weighted_tokens if item['weight'] > 1]
         
+    def _get_priority_authors(self):
+        """[Bugfix] 读取配置中的高优先级 HF 组织/作者列表，用于优先搜索官方镜像。
+
+        配置来源：``searcher.priority_organizations.huggingface``（统一配置），
+        向后兼容旧的 ``searcher.api.huggingface.priority_authors``，最终回落默认值。
+        """
+        authors = self.config.get("searcher", {}).get("priority_organizations", {}).get("huggingface", [])
+        if not authors:
+            authors = self.config.get("searcher", {}).get("api", {}).get("huggingface", {}).get("priority_authors", [])
+        if not authors:
+            try:
+                from .config import get_all_config
+                authors = get_all_config().get("searcher", {}).get("priority_organizations", {}).get("huggingface", [])
+            except Exception:
+                pass
+        if not authors:
+            try:
+                from .config import get_all_config
+                authors = get_all_config().get("searcher", {}).get("api", {}).get("huggingface", {}).get("priority_authors", [])
+            except Exception:
+                pass
+        return authors or ["Comfy-Org", "unsloth"]
+
+    def _build_search_queries(self, keywords, max_tokens=2):
+        """[Bugfix] 构建聚焦的 HF 仓库搜索词（默认取前 2 个高权重词）。
+
+        关键修复：之前用全部高权重词（如 ``minimax music dit``）去 ``author=Comfy-Org``
+        检索会返回空——HF 全文检索对过长的多词查询很挑剔。聚焦到模型族/版本级
+        （``minimax music``）才能稳定命中官方组织仓库（如 ``Comfy-Org/MiniMax-Music-3``）。
+
+        过滤掉孤立的纯整数 token（如 music3 -> '3'、fp16 -> '16'），这些整数权重高
+        但对召回有害，会导致官方镜像被淹没。
+        """
+        # 取前 max_tokens 个高权重词（keywords 已按权重降序），剔除纯整数
+        cleaned = [k for k in keywords if not re.match(r'^\d+$', k)][:max_tokens]
+        # 保底：如果清洗后太少，回退到原始前 max_tokens
+        if len(cleaned) < 1:
+            cleaned = keywords[:max_tokens]
+        return cleaned
+
     async def _discover_repos(self, session, keywords):
-        """[v3.4.0] 动态仓库发现 (根据高权重关键词搜索 HF 仓库)"""
-        top_keywords = keywords[:3]  # 取前3个高权重词
-        search_query = " ".join(top_keywords)
-        
+        """[v3.4.0] 动态仓库发现 (根据高权重关键词搜索 HF 仓库)
+
+        [Bugfix] 先搜索 Comfy-Org / unsloth 等高优先级组织命名空间，
+        再执行通用关键词搜索。避免官方镜像因下载量低而被原始仓库淹没。
+        """
+        # 聚焦查询：模型族/版本级（默认前 2 高权重词），确保 official 组织检索稳定命中。
+        # 例如 minimax_music3_dit -> ['minimax','music']，用 'minimax music' 检索
+        # author=Comfy-Org 能命中 Comfy-Org/MiniMax-Music-3；而 'minimax music dit' 会返回空。
+        priority_kw = self._build_search_queries(keywords, 2)
+        priority_query = " ".join(priority_kw)
+        # 通用检索查询（稍宽，取前 3 高权重词，仍过滤纯整数）
+        general_kw = self._build_search_queries(keywords, 3)
+        general_query = " ".join(general_kw)
+
         # 特殊处理 LoRA
         is_lora = any('lora' in k.lower() for k in keywords)
-        
-        logger.debug(f"[SmartDiscovery] Searching repos for: '{search_query}'")
-        
+
+        logger.debug(f"[SmartDiscovery] priority_query='{priority_query}' general_query='{general_query}'")
+
         discovered_repos = []
+
+        # 1) 高优先级组织命名空间搜索（Comfy-Org / unsloth 等官方镜像）
+        priority_authors = self._get_priority_authors()
+        for author in priority_authors:
+            found = []
+            # 先用聚焦 top-2 查询；若某组织无命中，退化为单族词（top-1）再试一次
+            for q in [priority_query, priority_kw[0] if priority_kw else ""]:
+                if not q or q in ("", None):
+                    continue
+                try:
+                    url = f"{self.api_url}?author={urllib.parse.quote(author)}&search={urllib.parse.quote(q)}&limit=8"
+                    resp = await session.get(url)
+                    if resp.status_code != 200:
+                        continue
+                    items = resp.json()
+                    for item in items:
+                        repo_id = item.get("modelId")
+                        if not repo_id: continue
+                        if any('gguf' in k.lower() for k in keywords) and 'gguf' not in repo_id.lower():
+                            continue
+                        if repo_id not in discovered_repos and repo_id not in found:
+                            found.append(repo_id)
+                    if found:
+                        break  # 聚焦查询已命中，无需再退化
+                except Exception as e:
+                    logger.debug(f"[SmartDiscovery] Author search '{author}' q='{q}' failed: {e}")
+            discovered_repos.extend(found)
+
+        # 2) 通用关键词搜索补全（按下载量排序）
         try:
-            # 按下载量排序，找最热门的仓库
-            url = f"{self.api_url}?search={urllib.parse.quote(search_query)}&sort=downloads&direction=-1&limit=8"
+            url = f"{self.api_url}?search={urllib.parse.quote(general_query)}&sort=downloads&direction=-1&limit=8"
             resp = await session.get(url)
             if resp.status_code == 200:
                 items = resp.json()
                 for item in items:
                     repo_id = item.get("modelId")
                     if not repo_id: continue
-                    
-                    # 简单过滤: 如果是 GGUF 文件，优先找 GGUF 仓库
                     if any('gguf' in k.lower() for k in keywords) and 'gguf' not in repo_id.lower():
                         continue
-                        
-                    discovered_repos.append(repo_id)
+                    if repo_id not in discovered_repos:
+                        discovered_repos.append(repo_id)
         except Exception as e:
             logger.exception(f"[SmartDiscovery] Error: {e}")
-            
+
         logger.info(f"[SmartDiscovery] Found {len(discovered_repos)} candidates: {discovered_repos}")
         return discovered_repos
 
@@ -738,7 +814,10 @@ class ModelScopeFileSearchProvider(BaseProvider):
     _tree_cache = {} # {repo_id: {"files": [...], "ts": timestamp}}
     CACHE_TTL = 300
     
-    # ModelScope 常见仓库映射 (用于关键词增强)
+    # ModelScope 常见仓库映射 (用于关键词增强)。
+    # 注意：Comfy-Org / unsloth 官方镜像优先通过 priority_organizations 机制
+    # （见 _get_priority_orgs + search 中的组织优先检索）实现，不再硬编码 per-model 仓库，
+    # 避免把"其他组织放出的模型"误写成固定仓库 ID。
     PRIORITY_REPOS = {
         'wan': ['Wan-AI/Wan2.1-T2V-14B', 'Wan-AI/Wan2.1-I2V-14B-480P', 'Wuli001/WAN-MoE'],
         'qwen': ['Qwen/Qwen2.5-VL-7B-Instruct', 'Qwen/Qwen-VL'],
@@ -760,6 +839,21 @@ class ModelScopeFileSearchProvider(BaseProvider):
         if referer:
             headers["Referer"] = referer
         return headers
+
+    def _get_priority_orgs(self):
+        """[Bugfix] 读取配置中的高优先级 ModelScope 组织列表（Comfy-Org / unsloth 等官方镜像）。
+
+        与 HuggingFace 端 ``_get_priority_authors`` 对称，统一走
+        ``searcher.priority_organizations.modelscope`` 配置。
+        """
+        orgs = self.config.get("searcher", {}).get("priority_organizations", {}).get("modelscope", [])
+        if not orgs:
+            try:
+                from .config import get_all_config
+                orgs = get_all_config().get("searcher", {}).get("priority_organizations", {}).get("modelscope", [])
+            except Exception:
+                pass
+        return orgs or ["Comfy-Org", "unsloth"]
 
     async def search(self, query, original_filename):
         """
@@ -842,7 +936,39 @@ class ModelScopeFileSearchProvider(BaseProvider):
 
                 # [v3.5.1] Merge Priority Repos (High Priority first)
                 # Ensure priority repos are at the front
+                # [Bugfix] 官方组织优先检索：对每个 priority org 做定向搜索，
+                # 只保留 Path == org 的仓库，确保 Comfy-Org / unsloth 镜像被优先发现
+                # （即使通用搜索将其淹没）。随后由 _apply_namespace_preference 加权。
+                priority_org_repos = []
+                for org in self._get_priority_orgs():
+                    try:
+                        payload = {
+                            "PageSize": 5,
+                            "PageNumber": 1,
+                            "SearchText": query,
+                            "Sort": {"SortBy": "Default"}
+                        }
+                        resp = await session.post(search_url, json=payload)
+                        if resp.status_code != 200:
+                            resp = await session.put(search_url, json=payload)
+                            if resp.status_code != 200: continue
+                        data = resp.json()
+                        if not data.get("Success"): continue
+                        for m in data.get("Data", {}).get("Model", {}).get("Models", []):
+                            owner = m.get("Path")
+                            name = m.get("Name")
+                            if owner == org and name:
+                                repo_id = f"{owner}/{name}"
+                                if repo_id not in priority_org_repos:
+                                    priority_org_repos.append(repo_id)
+                    except Exception as exc:
+                        logger.debug(f"[ModelScope] Priority org '{org}' search failed: {exc}")
+
+                # 组装：官方组织优先，其次 PRIORITY_REPOS 关键词命中，最后通用搜索
                 final_repos = []
+                for pr in priority_org_repos:
+                    if pr not in final_repos:
+                        final_repos.append(pr)
                 for pr in priority_target_repos:
                     if pr not in final_repos:
                         final_repos.append(pr)
@@ -903,19 +1029,32 @@ class ModelScopeFileSearchProvider(BaseProvider):
             if not file_path.endswith(('.safetensors', '.ckpt', '.pt', '.pth', '.bin', '.gguf')): continue
             
             fname_base = os.path.splitext(os.path.basename(file_path))[0].lower()
-            
+            fname_ext = os.path.splitext(file_path)[1].lower()
+            original_ext = os.path.splitext(original_filename)[1].lower()
+
             # Simple fuzzy match
             from rapidfuzz import fuzz
             p_score = fuzz.partial_ratio(original_base, fname_base)
-            
+
+            # [Bugfix] 扩展名一致性奖惩：请求 .safetensors 时优先返回同扩展名候选，
+            # 避免原始仓库的 .pth 文件排在 Comfy-Org 的 .safetensors 前面。
+            if original_ext and fname_ext:
+                if fname_ext == original_ext:
+                    p_score = min(100, int(p_score * 1.05))
+                else:
+                    p_score = int(p_score * 0.90)
+
             # print(f"[ModelScopeDebug] Checking {fname_base} vs {original_base} -> {p_score}")
-            
+
             # If high confidence, add result
             if p_score > 60:
                 # Direct Download Link Generation
                 # Format: https://modelscope.cn/api/v1/models/{repo_id}/repo?Revision=master&FilePath={file_path}
+                # ModelScope 默认分支可能是 master（Comfy-Org/unsloth 镜像常用），也可能是 main；
+                # _fetch_file_tree 内部已做 master/main 回退，但下载链接固定用 master
+                # 后续若发现 404 可再扩展分支动态选择。
                 download_url = rewrite_modelscope_url(f"https://modelscope.cn/api/v1/models/{repo_id}/repo?Revision=master&FilePath={file_path}")
-                
+
                 results.append({
                     "source": "ModelScope (Direct)",
                     "name": f"{repo_id}/{os.path.basename(file_path)}",
@@ -1229,6 +1368,43 @@ class ModelSearcher:
             c["score"] = float(c.get("score", 0.0)) * weight
         return candidates
 
+    def _apply_namespace_preference(self, candidates):
+        """[Bugfix] 对 Comfy-Org / unsloth 等高优先级命名空间加权。
+
+        即使 source 同为 HuggingFace 或 ModelScope，官方镜像组织的仓库也应优先于
+        原始作者仓库或第三方非官方仓库。配置来源同 ``_apply_source_preference``。
+        """
+        pref = self.config.get("searcher", {}).get("namespace_preference", {})
+        if not pref:
+            try:
+                from .config import get_all_config
+                pref = get_all_config().get("searcher", {}).get("namespace_preference", {})
+            except Exception:
+                pref = {}
+        if not pref:
+            pref = {"Comfy-Org": 1.15, "unsloth": 1.08}
+        # 将 priority_organizations 中的组织也纳入加权（默认 1.12），保证配置即生效，
+        # 无需在 namespace_preference 中重复列举。
+        try:
+            from .config import get_all_config
+            po = self.config.get("searcher", {}).get("priority_organizations", {})
+            if not po:
+                po = get_all_config().get("searcher", {}).get("priority_organizations", {})
+            all_orgs = set()
+            for orgs in (po or {}).values():
+                all_orgs.update(orgs or [])
+            for org in all_orgs:
+                pref.setdefault(org, 1.12)
+        except Exception:
+            pass
+        for c in candidates:
+            name = c.get("name", "") or ""
+            for ns, w in pref.items():
+                if name.lower().startswith(ns.lower() + "/"):
+                    c["score"] = float(c.get("score", 0.0)) * float(w)
+                    break
+        return candidates
+
     def _main_model_provider_order(self):
         """主模型默认 Provider 优先级：ComfyUI 官方国内镜像（HF / ModelScope / CNB）优先，
         其次 Civitai / Liblib 等社区源。其余（如未来扩展源）排末位。"""
@@ -1425,9 +1601,10 @@ class ModelSearcher:
         elapsed = time.time() - start_time
         logger.info(f"[AutoMatch] Completed in {elapsed:.2f}s")
 
-        # [Bugfix] 组件类别二次过滤（幂等）+ 源优先级加权（主模型优先官方国内镜像）
+        # [Bugfix] 组件类别二次过滤（幂等）+ 源/命名空间优先级加权
         all_candidates = self._filter_component_candidates(base_name, all_candidates)
         all_candidates = self._apply_source_preference(all_candidates)
+        all_candidates = self._apply_namespace_preference(all_candidates)
 
         # Final Sort and Deduplication
         all_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
