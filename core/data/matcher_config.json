@@ -8,14 +8,16 @@
     "civitai_score": 0.99
   },
   "matching": {
-    "use_db_first": true,
+    "use_db_fallback": true,
+    "core_coverage_min": 0.6,
+    "core_min_tokens": 2,
     "use_exact_match": true,
     "use_fuzzy_match": true,
     "use_variant_match": true,
     "use_legacy_match": true,
-    "fuzzy_score_cutoff": 60.0,
+    "fuzzy_score_cutoff": 65.0,
     "variant_score_cutoff": 0.9,
-    "legacy_score_cutoff": 75
+    "legacy_score_cutoff": 80
   },
   "searcher": {
     "network": {
@@ -27,6 +29,13 @@
     "high_confidence_score": 0.9,
     "db_fallback_score": 0.85,
     "search_term_limit": 5,
+    "source_preference": {
+      "HuggingFace": 1.0,
+      "ModelScope": 1.0,
+      "CNB": 0.95,
+      "Civitai": 0.9,
+      "Liblib": 0.9
+    },
     "api": {
       "civitai": {
         "url": "https://civitai.com/api/v1/model-versions/by-hash",

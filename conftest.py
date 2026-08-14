@@ -11,7 +11,7 @@ collect_ignore = ["__init__.py"]
 def _isolate_external_db(monkeypatch):
     """隔离 matcher 单测与外部 SQLite 数据库。
 
-    ``ModelMatcher.match()`` 默认走 ``use_db_first``，会查询随仓库发布的
+    ``ModelMatcher.match()`` 默认走 ``use_db_fallback``，会查询随仓库发布的
     ``core/data/models.db``（external_models 表）。该库含真实远程模型条目，
     会与测试里 mock 的 scanner 本地模型混淆，导致“不应匹配”的用例误判为匹配、
     甚至把请求文件名自身当成本地匹配返回。

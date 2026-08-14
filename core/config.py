@@ -36,7 +36,9 @@ _DEFAULT_CONFIG = {
         "civitai_score": 0.99,
     },
     "matching": {
-        "use_db_first": True,
+        "use_db_fallback": True,
+        "core_coverage_min": 0.6,
+        "core_min_tokens": 2,
         "use_exact_match": True,
         "use_fuzzy_match": True,
         "use_variant_match": True,
@@ -52,6 +54,13 @@ _DEFAULT_CONFIG = {
         "high_confidence_score": 0.9,
         "db_fallback_score": 0.85,
         "search_term_limit": 5,
+        "source_preference": {
+            "HuggingFace": 1.0,
+            "ModelScope": 1.0,
+            "CNB": 0.95,
+            "Civitai": 0.9,
+            "Liblib": 0.9,
+        },
         "api": {
             "civitai": {
                 "url": "https://civitai.com/api/v1/model-versions/by-hash",
@@ -222,7 +231,7 @@ def validate_config(cfg):
         _check_number(m, "fuzzy_score_cutoff", dm, errors)
         _check_number(m, "variant_score_cutoff", dm, errors)
         _check_number(m, "legacy_score_cutoff", dm, errors)
-        for k in ("use_db_first", "use_exact_match", "use_fuzzy_match",
+        for k in ("use_db_fallback", "use_exact_match", "use_fuzzy_match",
                   "use_variant_match", "use_legacy_match"):
             _check_bool(m, k, dm, errors)
 

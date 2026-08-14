@@ -49,7 +49,7 @@ def setUpModule():
     # 确保 T2.2 开关在测试期间生效；测试结束还原缓存
     config_module.override_config({
         'features': {'version_aware': True},
-        'matching': {'use_db_first': False},  # 隔离到内存匹配路径
+        'matching': {'use_db_fallback': False},  # 隔离到内存匹配路径
     })
 
 
@@ -93,7 +93,7 @@ class TestSimilarityVersionAware(unittest.TestCase):
     def _score(self, a, b, aware):
         config_module.override_config({
             'features': {'version_aware': aware},
-            'matching': {'use_db_first': False},
+            'matching': {'use_db_fallback': False},
         })
         try:
             return AdvancedTokenizer.calculate_similarity(a, b)
@@ -141,7 +141,7 @@ class TestMatcherVersionConflict(unittest.TestCase):
     def setUp(self):
         config_module.override_config({
             'features': {'version_aware': True},
-            'matching': {'use_db_first': False},
+            'matching': {'use_db_fallback': False},
         })
 
     def tearDown(self):

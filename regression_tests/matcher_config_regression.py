@@ -86,7 +86,7 @@ class MatcherConfigTests(unittest.TestCase):
 
         override_matcher_config({
             "matching": {
-                "use_db_first": False,
+                "use_db_fallback": False,
                 "use_exact_match": False,
                 "use_fuzzy_match": True,
                 "use_variant_match": False,

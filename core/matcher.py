@@ -1,5 +1,6 @@
 import difflib
 import os
+import re
 try:
     from .config import get_matcher_config, get_features
 except ImportError:
@@ -26,6 +27,13 @@ class ModelMatcher:
         self.anchor_pat = re.compile(r"(?i)^(wan\d|sdxl|pony|flux)")
         self.ver_pat = re.compile(r"(?i)^(v\d|\d+\.\d+)")
 
+        # [Bugfix] 本地匹配「核心词覆盖率」硬门槛配置
+        # 候选必须覆盖目标核心身份词的显著比例，否则即便共享 fp16/safetensors
+        # 等技术后缀也强制拒绝（解决 minimax…dit 误配 sam…multiplex 类问题）。
+        matching_cfg_init = self.config.get('matching', {})
+        self.core_coverage_min = float(matching_cfg_init.get('core_coverage_min', 0.6))
+        self.core_min_tokens = int(matching_cfg_init.get('core_min_tokens', 2))
+
     def invalidate_index(self):
         """显式使索引失效，强制在下次匹配时重新构建"""
         self._index_built = False
@@ -42,6 +50,54 @@ class ModelMatcher:
         name = os.path.basename(path.replace("\\", "/"))
         base, _ = os.path.splitext(name)
         return base.lower().strip()
+
+    # ----------------------------------------------------------
+    # [Bugfix] 本地匹配核心词覆盖率硬门槛
+    # 目标文件名含明确核心身份词（如 minimax / music3 / dit / sam / multiplex）
+    # 时，候选必须覆盖其中显著比例，技术后缀（fp16/fp8/bf16/safetensors…）不计入。
+    # ----------------------------------------------------------
+    _CORE_GENERIC = {'model', 'models', 'net', 'network', 'test',
+                     'v', 'version', 'ver', 'm'}
+    _CORE_NUM_RE = re.compile(r'^\d+(\.\d+)?$')
+
+    def _core_identity_tokens(self, base_name):
+        """提取文件名的核心身份词（排除技术后缀 / 纯数字 / 版本号 / 通用词）。
+
+        用于「核心词覆盖率」硬门槛：候选必须覆盖目标核心身份词的显著比例，
+        否则即便共享 fp16 / safetensors 等后缀也强制拒绝。
+        """
+        from .utils import AdvancedTokenizer, NOISE_SUFFIXES
+        tokens = set(AdvancedTokenizer.tokenize(base_name))
+        core = set()
+        for t in tokens:
+            if t in NOISE_SUFFIXES:
+                continue
+            if t in self._CORE_GENERIC:
+                continue
+            if t.isdigit():
+                continue
+            if self._CORE_NUM_RE.match(t):
+                continue
+            if len(t) < 2:
+                continue
+            core.add(t)
+        return core
+
+    def _core_coverage_ok(self, target_base, cand_base):
+        """核心词覆盖率门槛：候选必须覆盖目标核心身份词的 ``core_coverage_min`` 比例。
+
+        仅当目标本身含有足够明确的身份词（>= ``core_min_tokens``）时才强制门槛；
+        身份词不足（如极简文件名）时交由既有评分逻辑判定，避免误杀正常变体匹配
+        （如 ``flux1-dev`` 与 ``flux1-dev-fp8``）。
+        """
+        target_core = self._core_identity_tokens(target_base)
+        if len(target_core) < self.core_min_tokens:
+            return True
+        cand_core = self._core_identity_tokens(cand_base)
+        if not cand_core:
+            return False
+        covered = len(target_core & cand_core)
+        return (covered / len(target_core)) >= self.core_coverage_min
 
     def _build_index(self, force=False):
         """构建倒排索引以加速匹配 (O(N) -> O(1))，具备缓存校验功能"""
@@ -180,7 +236,9 @@ class ModelMatcher:
 
             # 5. Network/DB fallback（T2.5 本地优先）：本地四层完全无匹配时才启用。
             #    此块必须为最后一道，避免本地已有精确文件却被外部标准名抢答。
-            if not best_match and matching_cfg.get('use_db_first', True):
+            #    [Bugfix] 配置键由 use_db_first 更名为 use_db_fallback，语义明确为
+            #    「本地完全无匹配才回退 DB（ComfyUI 官方镜像信息）」，杜绝命名歧义。
+            if not best_match and matching_cfg.get('use_db_fallback', True):
                 try:
                     from .database import db
                     db_match, db_score = db.lookup_modelsdb(
@@ -449,7 +507,8 @@ class ModelMatcher:
         W_ANCHOR = 10.0
         W_VERSION = 5.0
         W_NORMAL = 1.0
-        W_NOISE = 0.1
+        # [Bugfix] 技术后缀权重进一步压低：fp16/fp8/safetensors 等不应单独支撑一次匹配
+        W_NOISE = 0.05
         from .utils import NOISE_SUFFIXES
         
         target_anchors = {t for t in target_tokens if self.anchor_pat.match(t)}
@@ -482,7 +541,11 @@ class ModelMatcher:
             
             cand_base = self._get_basename(info["filename"])
             cand_tokens = set(AdvancedTokenizer.tokenize(cand_base))
-            
+
+            # [Bugfix] 核心词覆盖率硬门槛：技术后缀（fp16 等）不应单独支撑匹配
+            if not self._core_coverage_ok(target_base, cand_base):
+                continue
+
             # 1. Base Score
             score = 0.0
             for token in target_tokens:
@@ -572,7 +635,11 @@ class ModelMatcher:
             cand_base = self._get_basename(info["filename"])
             cand_core = AdvancedTokenizer.get_core_tokens(cand_base)
             if not cand_core: continue
-            
+
+            # [Bugfix] 核心词覆盖率硬门槛：技术后缀（fp16 等）不应单独支撑匹配
+            if not self._core_coverage_ok(target_base, cand_base):
+                continue
+
             intersection = len(target_core.intersection(cand_core))
             union = len(target_core.union(cand_core))
             core_score = intersection / union if union > 0 else 0.0
@@ -613,7 +680,11 @@ class ModelMatcher:
         if match:
             best_name, score, idx = match
             candidate_info = basename_map[best_name]
-            
+
+            # [Bugfix] 核心词覆盖率硬门槛：不能仅凭后缀相同（token_set_ratio 高）就匹配
+            if not self._core_coverage_ok(target_base, best_name):
+                return None
+
             # [Fix] Apply Conflict Check
             if self._check_conflicts(current_val, candidate_info["filename"]):
                 return None

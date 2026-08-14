@@ -49,7 +49,7 @@ def setUpModule():
     # 确保 T2.1 开关在测试期间生效；测试结束还原缓存
     config_module.override_config({
         'features': {'chinese_tokenization': True},
-        'matching': {'use_db_first': False},  # 隔离到内存匹配路径
+        'matching': {'use_db_fallback': False},  # 隔离到内存匹配路径
     })
 
 
@@ -92,7 +92,7 @@ class TestTokenizeCJK(unittest.TestCase):
         """关闭时回退到 2-gram：不应产出整词「大模型」，但保留二元组「大模/模型」。"""
         config_module.override_config({
             'features': {'chinese_tokenization': False},
-            'matching': {'use_db_first': False},
+            'matching': {'use_db_fallback': False},
         })
         try:
             tokens = AdvancedTokenizer.tokenize("写实动漫大模型.safetensors")
@@ -108,7 +108,7 @@ class TestTokenizeCJK(unittest.TestCase):
         self.assertTrue(AdvancedTokenizer._cjk_enabled())
         config_module.override_config({
             'features': {'chinese_tokenization': False},
-            'matching': {'use_db_first': False},
+            'matching': {'use_db_fallback': False},
         })
         try:
             self.assertFalse(AdvancedTokenizer._cjk_enabled())
